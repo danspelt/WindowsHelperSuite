@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "XFI1ivGwUAQ=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Dan\\.nuget\\packages\\serilog\\4.3.1\\serilog.4.3.1.nupkg.sha512",
+    "C:\\Users\\Dan\\.nuget\\packages\\serilog.sinks.file\\7.0.0\\serilog.sinks.file.7.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}

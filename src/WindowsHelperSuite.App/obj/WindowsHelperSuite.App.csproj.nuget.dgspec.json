@@ -1,0 +1,618 @@
+{
+  "format": 1,
+  "restore": {
+    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.App\\WindowsHelperSuite.App.csproj": {}
+  },
+  "projects": {
+    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.App\\WindowsHelperSuite.App.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.App\\WindowsHelperSuite.App.csproj",
+        "projectName": "WindowsHelperSuite.App",
+        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.App\\WindowsHelperSuite.App.csproj",
+        "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.App\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0-windows"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0-windows7.0": {
+            "targetAlias": "net8.0-windows",
+            "projectReferences": {
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
+              },
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Hotkeys\\WindowsHelperSuite.Hotkeys.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Hotkeys\\WindowsHelperSuite.Hotkeys.csproj"
+              },
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj"
+              },
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Input\\WindowsHelperSuite.Input.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Input\\WindowsHelperSuite.Input.csproj"
+              },
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Overlay\\WindowsHelperSuite.Overlay.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Overlay\\WindowsHelperSuite.Overlay.csproj"
+              },
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj"
+              },
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj"
+              },
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Speech\\WindowsHelperSuite.Speech.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Speech\\WindowsHelperSuite.Speech.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0-windows7.0": {
+          "targetAlias": "net8.0-windows",
+          "dependencies": {
+            "CommunityToolkit.Mvvm": {
+              "target": "Package",
+              "version": "[8.4.1, )"
+            },
+            "Serilog": {
+              "target": "Package",
+              "version": "[4.3.1, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            },
+            "Microsoft.WindowsDesktop.App.WPF": {
+              "privateAssets": "none"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj",
+        "projectName": "WindowsHelperSuite.Core",
+        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj",
+        "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Hotkeys\\WindowsHelperSuite.Hotkeys.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Hotkeys\\WindowsHelperSuite.Hotkeys.csproj",
+        "projectName": "WindowsHelperSuite.Hotkeys",
+        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Hotkeys\\WindowsHelperSuite.Hotkeys.csproj",
+        "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Hotkeys\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj",
+        "projectName": "WindowsHelperSuite.Infrastructure",
+        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj",
+        "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "Serilog": {
+              "target": "Package",
+              "version": "[4.3.1, )"
+            },
+            "Serilog.Sinks.File": {
+              "target": "Package",
+              "version": "[7.0.0, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Input\\WindowsHelperSuite.Input.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Input\\WindowsHelperSuite.Input.csproj",
+        "projectName": "WindowsHelperSuite.Input",
+        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Input\\WindowsHelperSuite.Input.csproj",
+        "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Input\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Overlay\\WindowsHelperSuite.Overlay.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Overlay\\WindowsHelperSuite.Overlay.csproj",
+        "projectName": "WindowsHelperSuite.Overlay",
+        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Overlay\\WindowsHelperSuite.Overlay.csproj",
+        "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Overlay\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj",
+        "projectName": "WindowsHelperSuite.Prediction",
+        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj",
+        "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj",
+        "projectName": "WindowsHelperSuite.Settings",
+        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj",
+        "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
+              },
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Speech\\WindowsHelperSuite.Speech.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Speech\\WindowsHelperSuite.Speech.csproj",
+        "projectName": "WindowsHelperSuite.Speech",
+        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Speech\\WindowsHelperSuite.Speech.csproj",
+        "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
+        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Speech\\obj\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "allWarningsAsErrors": true,
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        }
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\8.0.419/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

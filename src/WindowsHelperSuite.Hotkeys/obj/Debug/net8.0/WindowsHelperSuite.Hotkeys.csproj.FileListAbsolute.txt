@@ -1,0 +1,16 @@
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\WindowsHelperSuite.Hotkeys.csproj.AssemblyReference.cache
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\WindowsHelperSuite.Hotkeys.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\WindowsHelperSuite.Hotkeys.AssemblyInfoInputs.cache
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\WindowsHelperSuite.Hotkeys.AssemblyInfo.cs
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\WindowsHelperSuite.Hotkeys.csproj.CoreCompileInputs.cache
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\WindowsHelperSuite.Hotkeys.sourcelink.json
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\bin\Debug\net8.0\WindowsHelperSuite.Hotkeys.deps.json
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\bin\Debug\net8.0\WindowsHelperSuite.Hotkeys.dll
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\bin\Debug\net8.0\WindowsHelperSuite.Hotkeys.pdb
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\bin\Debug\net8.0\WindowsHelperSuite.Core.dll
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\bin\Debug\net8.0\WindowsHelperSuite.Core.pdb
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\WindowsH.940DC212.Up2Date
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\WindowsHelperSuite.Hotkeys.dll
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\refint\WindowsHelperSuite.Hotkeys.dll
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\WindowsHelperSuite.Hotkeys.pdb
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\ref\WindowsHelperSuite.Hotkeys.dll
