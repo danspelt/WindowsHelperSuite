@@ -60,7 +60,8 @@
       },
       "WindowsHelperSuite.Hotkeys/1.0.0": {
         "dependencies": {
-          "WindowsHelperSuite.Core": "1.0.0"
+          "WindowsHelperSuite.Core": "1.0.0",
+          "WindowsHelperSuite.Infrastructure": "1.0.0"
         },
         "runtime": {
           "WindowsHelperSuite.Hotkeys.dll": {
@@ -84,7 +85,8 @@
       },
       "WindowsHelperSuite.Input/1.0.0": {
         "dependencies": {
-          "WindowsHelperSuite.Core": "1.0.0"
+          "WindowsHelperSuite.Core": "1.0.0",
+          "WindowsHelperSuite.Infrastructure": "1.0.0"
         },
         "runtime": {
           "WindowsHelperSuite.Input.dll": {
@@ -95,7 +97,8 @@
       },
       "WindowsHelperSuite.Overlay/1.0.0": {
         "dependencies": {
-          "WindowsHelperSuite.Core": "1.0.0"
+          "WindowsHelperSuite.Core": "1.0.0",
+          "WindowsHelperSuite.Infrastructure": "1.0.0"
         },
         "runtime": {
           "WindowsHelperSuite.Overlay.dll": {

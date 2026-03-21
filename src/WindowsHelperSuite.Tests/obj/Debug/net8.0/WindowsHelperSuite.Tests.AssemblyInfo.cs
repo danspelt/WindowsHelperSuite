@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("WindowsHelperSuite.Tests")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b62213e187e9785d8276115b0d248f213fca6473")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c972fa6fd5433637611753ca1e11d5e2037410ea")]
 [assembly: System.Reflection.AssemblyProductAttribute("WindowsHelperSuite.Tests")]
 [assembly: System.Reflection.AssemblyTitleAttribute("WindowsHelperSuite.Tests")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

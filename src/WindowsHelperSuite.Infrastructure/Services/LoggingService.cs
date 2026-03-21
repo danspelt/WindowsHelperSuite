@@ -1,3 +1,4 @@
+using System.IO;
 using Serilog;
 using WindowsHelperSuite.Core.Interfaces;
 

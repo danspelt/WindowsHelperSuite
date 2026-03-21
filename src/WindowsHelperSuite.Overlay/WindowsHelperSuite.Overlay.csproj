@@ -2,12 +2,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WindowsHelperSuite.Core\WindowsHelperSuite.Core.csproj" />
+    <ProjectReference Include="..\WindowsHelperSuite.Infrastructure\WindowsHelperSuite.Infrastructure.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net8.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
 </Project>

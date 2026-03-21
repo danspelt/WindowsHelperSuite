@@ -14,3 +14,5 @@ C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\refint\WindowsHelperSuite.Hotkeys.dll
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\WindowsHelperSuite.Hotkeys.pdb
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\obj\Debug\net8.0\ref\WindowsHelperSuite.Hotkeys.dll
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\bin\Debug\net8.0\WindowsHelperSuite.Infrastructure.dll
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Hotkeys\bin\Debug\net8.0\WindowsHelperSuite.Infrastructure.pdb

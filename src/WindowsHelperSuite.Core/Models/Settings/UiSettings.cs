@@ -7,4 +7,5 @@ public class UiSettings
     public double Opacity { get; set; } = 1.0;
     public string DockPosition { get; set; } = "BottomCenter";
     public bool LargeTextMode { get; set; } = false;
+    public OverlayLayout Layout { get; set; } = OverlayLayout.Vertical;
 }

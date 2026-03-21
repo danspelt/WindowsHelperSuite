@@ -64,7 +64,8 @@
         "type": "project",
         "framework": ".NETCoreApp,Version=v8.0",
         "dependencies": {
-          "WindowsHelperSuite.Core": "1.0.0"
+          "WindowsHelperSuite.Core": "1.0.0",
+          "WindowsHelperSuite.Infrastructure": "1.0.0"
         },
         "compile": {
           "bin/placeholder/WindowsHelperSuite.Hotkeys.dll": {}
@@ -86,13 +87,17 @@
         },
         "runtime": {
           "bin/placeholder/WindowsHelperSuite.Infrastructure.dll": {}
-        }
+        },
+        "frameworkReferences": [
+          "Microsoft.WindowsDesktop.App"
+        ]
       },
       "WindowsHelperSuite.Input/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v8.0",
         "dependencies": {
-          "WindowsHelperSuite.Core": "1.0.0"
+          "WindowsHelperSuite.Core": "1.0.0",
+          "WindowsHelperSuite.Infrastructure": "1.0.0"
         },
         "compile": {
           "bin/placeholder/WindowsHelperSuite.Input.dll": {}
@@ -105,14 +110,18 @@
         "type": "project",
         "framework": ".NETCoreApp,Version=v8.0",
         "dependencies": {
-          "WindowsHelperSuite.Core": "1.0.0"
+          "WindowsHelperSuite.Core": "1.0.0",
+          "WindowsHelperSuite.Infrastructure": "1.0.0"
         },
         "compile": {
           "bin/placeholder/WindowsHelperSuite.Overlay.dll": {}
         },
         "runtime": {
           "bin/placeholder/WindowsHelperSuite.Overlay.dll": {}
-        }
+        },
+        "frameworkReferences": [
+          "Microsoft.WindowsDesktop.App.WPF"
+        ]
       },
       "WindowsHelperSuite.Prediction/1.0.0": {
         "type": "project",
@@ -398,7 +407,7 @@
           "Microsoft.NETCore.App": {
             "privateAssets": "all"
           },
-          "Microsoft.WindowsDesktop.App.WPF": {
+          "Microsoft.WindowsDesktop.App": {
             "privateAssets": "none"
           }
         },

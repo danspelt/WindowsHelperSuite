@@ -1,11 +1,11 @@
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\bin\Debug\net8.0\WindowsHelperSuite.Core.deps.json
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\bin\Debug\net8.0\WindowsHelperSuite.Core.dll
+C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\bin\Debug\net8.0\WindowsHelperSuite.Core.pdb
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\obj\Debug\net8.0\WindowsHelperSuite.Core.GeneratedMSBuildEditorConfig.editorconfig
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\obj\Debug\net8.0\WindowsHelperSuite.Core.AssemblyInfoInputs.cache
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\obj\Debug\net8.0\WindowsHelperSuite.Core.AssemblyInfo.cs
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\obj\Debug\net8.0\WindowsHelperSuite.Core.csproj.CoreCompileInputs.cache
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\obj\Debug\net8.0\WindowsHelperSuite.Core.sourcelink.json
-C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\bin\Debug\net8.0\WindowsHelperSuite.Core.deps.json
-C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\bin\Debug\net8.0\WindowsHelperSuite.Core.dll
-C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\bin\Debug\net8.0\WindowsHelperSuite.Core.pdb
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\obj\Debug\net8.0\WindowsHelperSuite.Core.dll
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\obj\Debug\net8.0\refint\WindowsHelperSuite.Core.dll
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Core\obj\Debug\net8.0\WindowsHelperSuite.Core.pdb
