@@ -4,22 +4,27 @@ using WindowsHelperSuite.Core.Models;
 
 namespace WindowsHelperSuite.Prediction.Services;
 
-public class PredictionService : IPredictionService
+public class PredictionService : IPredictionService, IDisposable
 {
     private const int MaxSuggestions = 9;
-    private static readonly string[] SeedWords =
-    [
-        "the", "be", "to", "of", "and", "a", "in", "that", "have", "i",
-        "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
-        "this", "but", "his", "by", "from", "they", "we", "say", "her", "she",
-        "or", "an", "will", "my", "one", "all", "would", "there", "their", "what",
-        "so", "up", "out", "if", "about", "who", "get", "which", "go", "me"
-    ];
+    private const int MaxBigrams = 5000;
+    private const int SaveDebounceMs = 3000;
+    private const int RecencyWindowSize = 10;
 
     private readonly object _syncRoot = new();
     private readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
     private readonly string _storagePath;
+    private readonly System.Timers.Timer _saveTimer;
     private WordBankStore _store;
+    private bool _dirty;
+
+    // Fast lookup indexes rebuilt on load/seed
+    private Dictionary<string, WordBankEntry> _wordIndex = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, WordBankEntry> _phraseIndex = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, WordBankEntry> _bigramIndex = new(StringComparer.OrdinalIgnoreCase);
+
+    // Recency tracking — recently accepted words get a temporary score boost
+    private readonly LinkedList<string> _recentlyAccepted = new();
 
     public PredictionService()
     {
@@ -30,14 +35,21 @@ public class PredictionService : IPredictionService
             "wordbank.json");
 
         Directory.CreateDirectory(Path.GetDirectoryName(_storagePath)!);
+
+        _saveTimer = new System.Timers.Timer(SaveDebounceMs) { AutoReset = false };
+        _saveTimer.Elapsed += (_, _) => FlushSave();
+
         _store = LoadStore();
-        EnsureSeedWords();
+        RebuildIndexes();
+        EnsureSeedData();
     }
 
     public IReadOnlyList<SuggestionItem> GetSuggestions(string context, string currentWord)
     {
         var normalizedWord = NormalizeWord(currentWord);
         var normalizedContext = NormalizePhrase(context);
+        var lastContextWord = GetLastWord(normalizedContext);
+        var contextNextWords = GetContextNextWords(lastContextWord);
 
         lock (_syncRoot)
         {
@@ -45,6 +57,7 @@ public class PredictionService : IPredictionService
 
             if (!string.IsNullOrWhiteSpace(normalizedWord))
             {
+                // Word prefix matches, boosted by context
                 suggestions.AddRange(
                     _store.Words
                         .Where(entry => entry.Text.StartsWith(normalizedWord, StringComparison.OrdinalIgnoreCase))
@@ -52,8 +65,9 @@ public class PredictionService : IPredictionService
                             entry.Text,
                             entry.Text,
                             SuggestionKind.WordCompletion,
-                            CalculateWordScore(entry, normalizedWord))));
+                            CalculateWordScore(entry, normalizedWord, contextNextWords))));
 
+                // Fallback to contains match
                 if (suggestions.Count == 0)
                 {
                     suggestions.AddRange(
@@ -66,6 +80,7 @@ public class PredictionService : IPredictionService
                                 CalculateContainsScore(entry, normalizedWord))));
                 }
 
+                // Phrase matches
                 suggestions.AddRange(
                     _store.Phrases
                         .Where(entry => PhraseMatches(entry.Text, normalizedContext, normalizedWord))
@@ -75,19 +90,23 @@ public class PredictionService : IPredictionService
                             SuggestionKind.PhraseCompletion,
                             CalculatePhraseScore(entry, normalizedContext, normalizedWord))));
             }
-
-            if (suggestions.Count == 0 && string.IsNullOrWhiteSpace(normalizedWord))
+            else if (!string.IsNullOrWhiteSpace(lastContextWord))
             {
-                suggestions.AddRange(
-                    _store.Words
-                        .OrderByDescending(entry => entry.Frequency)
-                        .ThenBy(entry => entry.Text, StringComparer.OrdinalIgnoreCase)
-                        .Take(MaxSuggestions)
-                        .Select(entry => new SuggestionCandidate(
-                            entry.Text,
-                            entry.Text,
-                            SuggestionKind.WordCompletion,
-                            entry.Frequency)));
+                // No current word typed yet, but we have context → suggest next words
+                suggestions.AddRange(GetNextWordSuggestions(lastContextWord, contextNextWords));
+
+                // If no bigrams found, fall back to frequent words + sentence starters
+                if (suggestions.Count == 0)
+                {
+                    suggestions.AddRange(GetFrequentWordSuggestions());
+                    suggestions.AddRange(GetSentenceStarterSuggestions());
+                }
+            }
+            else
+            {
+                // No context at all → suggest sentence starters + frequent words
+                suggestions.AddRange(GetSentenceStarterSuggestions());
+                suggestions.AddRange(GetFrequentWordSuggestions());
             }
 
             return suggestions
@@ -111,24 +130,83 @@ public class PredictionService : IPredictionService
     public void LearnWord(string word)
     {
         var normalizedWord = NormalizeWord(word);
-        if (normalizedWord.Length <= 2)
+        if (normalizedWord.Length <= 1)
         {
             return;
         }
 
         lock (_syncRoot)
         {
-            var existing = _store.Words.FirstOrDefault(entry => entry.Text.Equals(normalizedWord, StringComparison.OrdinalIgnoreCase));
-            if (existing == null)
-            {
-                _store.Words.Add(new WordBankEntry { Text = normalizedWord, Frequency = 1 });
-            }
-            else
+            if (_wordIndex.TryGetValue(normalizedWord, out var existing))
             {
                 existing.Frequency++;
             }
+            else
+            {
+                var entry = new WordBankEntry { Text = normalizedWord, Frequency = 1 };
+                _store.Words.Add(entry);
+                _wordIndex[normalizedWord] = entry;
+            }
 
-            SaveStore();
+            TrackRecent(normalizedWord);
+            ScheduleSave();
+        }
+    }
+
+    private void TrackRecent(string word)
+    {
+        _recentlyAccepted.Remove(word);
+        _recentlyAccepted.AddFirst(word);
+        while (_recentlyAccepted.Count > RecencyWindowSize)
+            _recentlyAccepted.RemoveLast();
+    }
+
+    private double GetRecencyBoost(string word)
+    {
+        var node = _recentlyAccepted.First;
+        int position = 0;
+        while (node != null)
+        {
+            if (node.Value.Equals(word, StringComparison.OrdinalIgnoreCase))
+                return (RecencyWindowSize - position) * 40; // Most recent = 400 boost, decaying
+            node = node.Next;
+            position++;
+        }
+        return 0;
+    }
+
+    public void LearnBigram(string previousWord, string currentWord)
+    {
+        var prev = NormalizeWord(previousWord);
+        var curr = NormalizeWord(currentWord);
+        if (string.IsNullOrWhiteSpace(prev) || string.IsNullOrWhiteSpace(curr))
+        {
+            return;
+        }
+
+        var key = $"{prev} {curr}";
+        lock (_syncRoot)
+        {
+            if (_bigramIndex.TryGetValue(key, out var existing))
+            {
+                existing.Frequency = Math.Min(existing.Frequency + 1, 200);
+            }
+            else
+            {
+                // Evict lowest-frequency bigram if at capacity
+                if (_store.Bigrams.Count >= MaxBigrams)
+                {
+                    var weakest = _store.Bigrams.OrderBy(b => b.Frequency).First();
+                    _store.Bigrams.Remove(weakest);
+                    _bigramIndex.Remove(weakest.Text);
+                }
+
+                var entry = new WordBankEntry { Text = key, Frequency = 1 };
+                _store.Bigrams.Add(entry);
+                _bigramIndex[key] = entry;
+            }
+
+            ScheduleSave();
         }
     }
 
@@ -148,17 +226,18 @@ public class PredictionService : IPredictionService
 
         lock (_syncRoot)
         {
-            var existing = _store.Phrases.FirstOrDefault(entry => entry.Text.Equals(normalizedPhrase, StringComparison.OrdinalIgnoreCase));
-            if (existing == null)
-            {
-                _store.Phrases.Add(new WordBankEntry { Text = normalizedPhrase, Frequency = 1 });
-            }
-            else
+            if (_phraseIndex.TryGetValue(normalizedPhrase, out var existing))
             {
                 existing.Frequency++;
             }
+            else
+            {
+                var entry = new WordBankEntry { Text = normalizedPhrase, Frequency = 1 };
+                _store.Phrases.Add(entry);
+                _phraseIndex[normalizedPhrase] = entry;
+            }
 
-            SaveStore();
+            ScheduleSave();
         }
     }
 
@@ -178,25 +257,86 @@ public class PredictionService : IPredictionService
         return JsonSerializer.Deserialize<WordBankStore>(json, _jsonOptions) ?? new WordBankStore();
     }
 
-    private void SaveStore()
+    private void ScheduleSave()
     {
-        var json = JsonSerializer.Serialize(_store, _jsonOptions);
-        File.WriteAllText(_storagePath, json);
+        _dirty = true;
+        _saveTimer.Stop();
+        _saveTimer.Start();
     }
 
-    private void EnsureSeedWords()
+    private void FlushSave()
+    {
+        if (!_dirty) return;
+        lock (_syncRoot)
+        {
+            try
+            {
+                var json = JsonSerializer.Serialize(_store, _jsonOptions);
+                File.WriteAllText(_storagePath, json);
+                _dirty = false;
+            }
+            catch { /* Don't crash on file I/O errors */ }
+        }
+    }
+
+    private void RebuildIndexes()
+    {
+        _wordIndex = new Dictionary<string, WordBankEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in _store.Words)
+        {
+            _wordIndex.TryAdd(entry.Text, entry);
+        }
+
+        _phraseIndex = new Dictionary<string, WordBankEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in _store.Phrases)
+        {
+            _phraseIndex.TryAdd(entry.Text, entry);
+        }
+
+        _bigramIndex = new Dictionary<string, WordBankEntry>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in _store.Bigrams)
+        {
+            _bigramIndex.TryAdd(entry.Text, entry);
+        }
+    }
+
+    private void EnsureSeedData()
     {
         lock (_syncRoot)
         {
-            foreach (var word in SeedWords)
+            var existingWords = new HashSet<string>(
+                _store.Words.Select(entry => entry.Text),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (words, baseFrequency) in EnglishDictionary.WordTiers)
             {
-                if (_store.Words.All(entry => !entry.Text.Equals(word, StringComparison.OrdinalIgnoreCase)))
+                foreach (var word in words)
                 {
-                    _store.Words.Add(new WordBankEntry { Text = word, Frequency = 1 });
+                    if (!existingWords.Contains(word))
+                    {
+                        _store.Words.Add(new WordBankEntry { Text = word, Frequency = baseFrequency });
+                        existingWords.Add(word);
+                    }
                 }
             }
 
-            SaveStore();
+            var existingPhrases = new HashSet<string>(
+                _store.Phrases.Select(entry => entry.Text),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (phrases, baseFrequency) in EnglishDictionary.PhraseTiers)
+            {
+                foreach (var phrase in phrases)
+                {
+                    if (!existingPhrases.Contains(phrase))
+                    {
+                        _store.Phrases.Add(new WordBankEntry { Text = phrase, Frequency = baseFrequency });
+                        existingPhrases.Add(phrase);
+                    }
+                }
+            }
+
+            FlushSave();
         }
     }
 
@@ -216,27 +356,153 @@ public class PredictionService : IPredictionService
         return phrase.StartsWith(currentWord, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static double CalculateWordScore(WordBankEntry entry, string currentWord)
+    private IEnumerable<SuggestionCandidate> GetNextWordSuggestions(string lastContextWord, HashSet<string> contextNextWords)
+    {
+        // Suggest words that commonly follow the previous word
+        foreach (var nextWord in contextNextWords)
+        {
+            if (_wordIndex.TryGetValue(nextWord, out var entry))
+            {
+                var rank = GetBigramRank(lastContextWord, entry.Text);
+                var score = 2000 - (rank * 30) + (entry.Frequency * 5);
+                yield return new SuggestionCandidate(
+                    entry.Text,
+                    entry.Text,
+                    SuggestionKind.WordCompletion,
+                    score);
+            }
+        }
+    }
+
+    private static readonly HashSet<string> _starterSet = new(EnglishDictionary.SentenceStarters, StringComparer.OrdinalIgnoreCase);
+
+    private IEnumerable<SuggestionCandidate> GetSentenceStarterSuggestions()
+    {
+        foreach (var starter in EnglishDictionary.SentenceStarters)
+        {
+            if (_wordIndex.TryGetValue(starter, out var entry))
+            {
+                var rank = Array.IndexOf(EnglishDictionary.SentenceStarters, starter);
+                var score = 1500 - (rank >= 0 ? rank * 20 : 500) + (entry.Frequency * 3);
+                yield return new SuggestionCandidate(
+                    entry.Text,
+                    entry.Text,
+                    SuggestionKind.WordCompletion,
+                    score);
+            }
+        }
+    }
+
+    private IEnumerable<SuggestionCandidate> GetFrequentWordSuggestions()
+    {
+        // Return the most frequently used words as fallback
+        return _store.Words
+            .Where(w => w.Text.Length >= 2)
+            .OrderByDescending(w => w.Frequency)
+            .Take(MaxSuggestions * 2)
+            .Select(entry => new SuggestionCandidate(
+                entry.Text,
+                entry.Text,
+                SuggestionKind.WordCompletion,
+                800 + (entry.Frequency * 5) + GetRecencyBoost(entry.Text)));
+    }
+
+    private HashSet<string> GetContextNextWords(string lastContextWord)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(lastContextWord))
+        {
+            return result;
+        }
+
+        // Static bigram map
+        if (EnglishDictionary.NextWordMap.TryGetValue(lastContextWord, out var staticNext))
+        {
+            foreach (var word in staticNext)
+            {
+                result.Add(word);
+            }
+        }
+
+        // Learned bigrams
+        var prefix = lastContextWord + " ";
+        foreach (var bigram in _store.Bigrams.Where(b => b.Text.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+        {
+            var parts = bigram.Text.Split(' ', 2);
+            if (parts.Length == 2)
+            {
+                result.Add(parts[1]);
+            }
+        }
+
+        return result;
+    }
+
+    private int GetBigramRank(string previousWord, string nextWord)
+    {
+        // Check learned bigrams first (user patterns rank highest)
+        var key = $"{previousWord} {nextWord}";
+        if (_bigramIndex.TryGetValue(key, out var learned))
+        {
+            return Math.Max(0, 5 - Math.Min(learned.Frequency, 5));
+        }
+
+        // Check static bigram map position
+        if (EnglishDictionary.NextWordMap.TryGetValue(previousWord, out var staticNext))
+        {
+            var idx = Array.FindIndex(staticNext, s => s.Equals(nextWord, StringComparison.OrdinalIgnoreCase));
+            if (idx >= 0)
+            {
+                return idx + 5;
+            }
+        }
+
+        return 50;
+    }
+
+    private static string GetLastWord(string context)
+    {
+        if (string.IsNullOrWhiteSpace(context))
+        {
+            return string.Empty;
+        }
+
+        var parts = context.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length > 0 ? parts[^1] : string.Empty;
+    }
+
+    private double CalculateWordScore(WordBankEntry entry, string currentWord, HashSet<string> contextNextWords)
     {
         var exactBoost = entry.Text.Equals(currentWord, StringComparison.OrdinalIgnoreCase) ? 1000 : 0;
         var prefixBoost = entry.Text.StartsWith(currentWord, StringComparison.OrdinalIgnoreCase) ? 250 : 0;
-        var lengthPenalty = Math.Max(0, entry.Text.Length - currentWord.Length) * 0.5;
-        return exactBoost + prefixBoost + (entry.Frequency * 10) - lengthPenalty;
+        var contextBoost = contextNextWords.Contains(entry.Text) ? 500 : 0;
+        var recencyBoost = GetRecencyBoost(entry.Text);
+        // Favor shorter completions (closer to what user typed)
+        var remainingChars = Math.Max(0, entry.Text.Length - currentWord.Length);
+        var lengthPenalty = remainingChars * 2.0;
+        // Short common words get a bonus
+        var shortWordBonus = entry.Text.Length <= 5 ? 50 : 0;
+        // High-frequency words the user has taught get a strong boost
+        var frequencyScore = entry.Frequency >= 10 ? entry.Frequency * 15 : entry.Frequency * 10;
+        return exactBoost + prefixBoost + contextBoost + recencyBoost + shortWordBonus + frequencyScore - lengthPenalty;
     }
 
-    private static double CalculateContainsScore(WordBankEntry entry, string currentWord)
+    private double CalculateContainsScore(WordBankEntry entry, string currentWord)
     {
         var index = entry.Text.IndexOf(currentWord, StringComparison.OrdinalIgnoreCase);
         var positionPenalty = index < 0 ? 100 : index * 5;
-        return (entry.Frequency * 6) - positionPenalty;
+        var recencyBoost = GetRecencyBoost(entry.Text);
+        return recencyBoost + (entry.Frequency * 6) - positionPenalty;
     }
 
-    private static double CalculatePhraseScore(WordBankEntry entry, string context, string currentWord)
+    private double CalculatePhraseScore(WordBankEntry entry, string context, string currentWord)
     {
         var combined = string.IsNullOrWhiteSpace(context) ? currentWord : $"{context} {currentWord}".Trim();
         var exactBoost = entry.Text.Equals(combined, StringComparison.OrdinalIgnoreCase) ? 1200 : 0;
         var prefixBoost = entry.Text.StartsWith(combined, StringComparison.OrdinalIgnoreCase) ? 400 : 0;
-        return exactBoost + prefixBoost + (entry.Frequency * 12);
+        // Phrases that the user types frequently should rank higher
+        var frequencyScore = entry.Frequency >= 5 ? entry.Frequency * 18 : entry.Frequency * 12;
+        return exactBoost + prefixBoost + frequencyScore;
     }
 
     private static string NormalizeWord(string input)
@@ -269,12 +535,20 @@ public class PredictionService : IPredictionService
         return compact.ToLowerInvariant();
     }
 
+    public void Dispose()
+    {
+        _saveTimer.Stop();
+        FlushSave();
+        _saveTimer.Dispose();
+    }
+
     private sealed record SuggestionCandidate(string DisplayText, string InsertText, SuggestionKind Kind, double Score);
 
     private sealed class WordBankStore
     {
         public List<WordBankEntry> Words { get; set; } = [];
         public List<WordBankEntry> Phrases { get; set; } = [];
+        public List<WordBankEntry> Bigrams { get; set; } = [];
     }
 
     private sealed class WordBankEntry

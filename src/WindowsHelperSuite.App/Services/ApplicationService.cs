@@ -7,6 +7,7 @@ using WindowsHelperSuite.Hotkeys.Services;
 using WindowsHelperSuite.Overlay.Services;
 using WindowsHelperSuite.Input.Services;
 using WindowsHelperSuite.Prediction.Services;
+using WindowsHelperSuite.Speech.Services;
 
 namespace WindowsHelperSuite.App.Services;
 
@@ -19,8 +20,11 @@ public class ApplicationService : IDisposable
     private readonly OverlayService _overlayService;
     private readonly InputService _inputService;
     private readonly IPredictionService _predictionService;
+    private readonly ISpeechService _speechService;
     private readonly Queue<string> _recentWords = new();
+    private readonly System.Timers.Timer _focusCheckTimer;
     private const int MaxContextWords = 6;
+    private int _focusLostCount = 0; // Require multiple failed checks before hiding
 
     public ApplicationService()
     {
@@ -33,6 +37,12 @@ public class ApplicationService : IDisposable
         _overlayService = new OverlayService(_loggingService, _settingsService);
         _inputService = new InputService(_loggingService);
         _predictionService = new PredictionService();
+        _speechService = new SpeechService();
+
+        // Periodic focus check - hide overlay when no text field is focused
+        _focusCheckTimer = new System.Timers.Timer(500);
+        _focusCheckTimer.Elapsed += OnFocusCheckTimerElapsed;
+        _focusCheckTimer.AutoReset = true;
 
         // Wire up suggestion selection to text injection
         _overlayService.SuggestionSelected += OnSuggestionSelected;
@@ -44,7 +54,7 @@ public class ApplicationService : IDisposable
         _hotkeyService.Start();
         _inputService.Start();
 
-        _loggingService.Information("Application started (v3 - text input validation fix)");
+        _loggingService.Information("Application started (v4 - enhanced injection + key suppression)");
     }
 
     public void Run()
@@ -55,21 +65,53 @@ public class ApplicationService : IDisposable
     private void WireInputToOverlay()
     {
         // Show overlay when typing starts
-        _inputService.TypingStarted += (s, e) => ShowOverlay();
+        _inputService.TypingStarted += (s, e) =>
+        {
+            try { ShowOverlay(); }
+            catch (Exception ex) { _loggingService.Warning($"TypingStarted handler error: {ex.Message}"); }
+        };
 
         // Update suggestions as text is captured
-        _inputService.TextCaptured += (s, text) => UpdateSuggestions(text);
+        _inputService.TextCaptured += (s, text) =>
+        {
+            try { UpdateSuggestions(text); }
+            catch (Exception ex) { _loggingService.Warning($"TextCaptured handler error: {ex.Message}"); }
+        };
 
-        _inputService.WordTyped += (s, word) => OnWordTyped(word);
-        _inputService.SentenceTyped += (s, sentence) => OnSentenceTyped(sentence);
+        _inputService.WordTyped += (s, word) =>
+        {
+            try
+            {
+                OnWordTyped(word);
 
-        // Hide overlay when typing stops (after 10s inactivity)
-        _inputService.TypingStopped += (s, e) =>
+                // After every space, ensure the word bank opens with next-word suggestions
+                _hasValidTextInput = true;
+                _inputService.IsOverlayVisible = true;
+                _focusCheckTimer.Start();
+                UpdateSuggestions(string.Empty);
+            }
+            catch (Exception ex) { _loggingService.Warning($"WordTyped handler error: {ex.Message}"); }
+        };
+        _inputService.SentenceTyped += (s, sentence) =>
+        {
+            try { OnSentenceTyped(sentence); }
+            catch (Exception ex) { _loggingService.Warning($"SentenceTyped handler error: {ex.Message}"); }
+        };
+        _inputService.OverlayDismissRequested += (s, e) =>
         {
             HideOverlay();
             _currentWord = string.Empty;
             _hasValidTextInput = false;
-            _loggingService.Debug("Overlay hidden - typing stopped");
+            _previousWord = string.Empty;
+            _recentWords.Clear();
+            _loggingService.Debug("Overlay hidden - explicit dismissal requested");
+        };
+
+        // Keep overlay visible when typing stops so the word bank remains available
+        _inputService.TypingStopped += (s, e) =>
+        {
+            _currentWord = string.Empty;
+            _loggingService.Debug("Typing stopped - keeping overlay visible");
         };
 
         // Hide overlay when typing on desktop (no valid text input)
@@ -80,10 +122,62 @@ public class ApplicationService : IDisposable
         };
 
         // Handle selection keys 1-9
+        // Resolve the suggestion SYNCHRONOUSLY so we capture the correct word,
+        // then dispatch only the text injection async to avoid hook timeout.
         _inputService.SelectionKeyPressed += (s, slot) =>
         {
-            _loggingService.Debug($"Selection key pressed: slot {slot}");
-            _overlayService.HandleSelectionKey(slot);
+            var suggestion = _currentSuggestions.FirstOrDefault(x => x.Slot == slot);
+            if (suggestion == null)
+            {
+                _loggingService.Debug($"Selection key {slot}: no suggestion found");
+                return;
+            }
+
+            // Capture state NOW before anything changes
+            var wordToInsert = suggestion.DisplayText;
+            var charsToDelete = _currentWord?.Length ?? 0;
+
+            // Immediately clear so a rapid second press won't double-insert from stale list
+            _currentWord = string.Empty;
+            _currentSuggestions = [];
+            _inputService.ResetAfterInsertion();
+
+            _loggingService.Debug($"Selection key {slot}: inserting \"{wordToInsert}\", deleting {charsToDelete} chars");
+
+            // Visual feedback — flash the selected button green
+            _overlayService.FlashSelection(slot);
+
+            // Inject text on the UI thread (STA + message pump = clipboard works)
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+            {
+                try
+                {
+                    if (charsToDelete > 0)
+                    {
+                        Win32TextInjection.SendBackspace(charsToDelete);
+                        Thread.Sleep(30); // Let target app process deletions
+                    }
+                    Win32TextInjection.SendText(wordToInsert + " ");
+
+                    // Update context BEFORE getting new suggestions
+                    LearnAcceptedSuggestion(wordToInsert);
+                    _loggingService.Information($"Inserted: {wordToInsert}");
+
+                    // Speak the word if headset is connected
+                    if (_speechService.IsPreferredDeviceConnected)
+                    {
+                        _speechService.Speak(wordToInsert);
+                    }
+
+                    // Refresh word bank with next-word suggestions so user can chain picks
+                    _hasValidTextInput = true;
+                    UpdateSuggestions(string.Empty);
+                }
+                catch (Exception ex)
+                {
+                    _loggingService.Warning($"Text injection failed for \"{wordToInsert}\": {ex.Message}");
+                }
+            });
         };
 
         // Handle paging
@@ -100,13 +194,46 @@ public class ApplicationService : IDisposable
         _hasValidTextInput = true;
         _inputService.IsOverlayVisible = true;
         UpdateSuggestions(_currentWord);
+        _focusCheckTimer.Start();
         _loggingService.Debug("Overlay shown - typing started");
     }
 
     private void HideOverlay()
     {
+        _focusCheckTimer.Stop();
         _overlayService.HideSuggestions();
         _inputService.IsOverlayVisible = false;
+    }
+
+    private void OnFocusCheckTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
+    {
+        try
+        {
+            var hasCaret = Win32Caret.GetCaretPosition(out var caretX, out var caretY);
+            var isValidCaret = hasCaret && (caretX != 0 || caretY != 0);
+            if (!isValidCaret)
+            {
+                _focusLostCount++;
+                // Require 3 consecutive failed checks (1.5s) before hiding
+                // This prevents flickering when caret briefly becomes unavailable
+                if (_focusLostCount >= 3)
+                {
+                    _loggingService.Debug("Focus check: no text field focused for 1.5s - hiding overlay");
+                    System.Windows.Application.Current?.Dispatcher.Invoke(() => HideOverlay());
+                    _hasValidTextInput = false;
+                    _currentWord = string.Empty;
+                    _focusLostCount = 0;
+                }
+            }
+            else
+            {
+                _focusLostCount = 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            _loggingService.Warning($"Focus check error: {ex.Message}");
+        }
     }
 
     private void UpdateSuggestions(string text)
@@ -119,38 +246,51 @@ public class ApplicationService : IDisposable
         }
 
         _currentWord = text;
+        var context = GetContextText();
+        var lastContextWord = context.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
 
-        _currentSuggestions = _predictionService.GetSuggestions(GetContextText(), text).ToList();
+        _currentSuggestions = _predictionService.GetSuggestions(context, text).ToList();
+
+        // Set context mode indicator
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            var modeText = !string.IsNullOrWhiteSpace(lastContextWord)
+                ? $"completing \"{text}\" after \"{lastContextWord}\""
+                : $"completing \"{text}\"";
+            _overlayService.SetContextMode(modeText);
+        }
+        else if (!string.IsNullOrWhiteSpace(lastContextWord))
+        {
+            _overlayService.SetContextMode($"next word after \"{lastContextWord}\"");
+        }
+        else
+        {
+            _overlayService.SetContextMode("sentence start");
+        }
+
         _overlayService.ShowSuggestions(_currentSuggestions);
     }
 
     private void OnSuggestionSelected(object? sender, int slot)
     {
-        _loggingService.Debug($"OnSuggestionSelected called with slot {slot}, _currentSuggestions count: {_currentSuggestions.Count}");
+        // Legacy path — kept for overlay click selection if ever added
         var suggestion = _currentSuggestions.FirstOrDefault(s => s.Slot == slot);
         if (suggestion != null)
         {
-            _loggingService.Debug($"Found suggestion in _currentSuggestions: {suggestion.DisplayText}");
-            // Clear the typed text by sending backspaces
-            if (!string.IsNullOrEmpty(_currentWord))
-            {
-                Win32TextInjection.SendBackspace(_currentWord.Length);
-            }
+            var wordToInsert = suggestion.DisplayText;
+            var charsToDelete = _currentWord?.Length ?? 0;
 
-            // Insert the complete word or phrase
-            Win32TextInjection.SendText(suggestion.DisplayText + " ");
-            LearnAcceptedSuggestion(suggestion.DisplayText);
-
-            _loggingService.Information($"Inserted: {suggestion.DisplayText}");
-
-            // Clear current word and hide overlay
             _currentWord = string.Empty;
             _inputService.ClearCurrentWord();
-            HideOverlay();
-        }
-        else
-        {
-            _loggingService.Warning($"No suggestion found in _currentSuggestions for slot {slot}");
+
+            if (charsToDelete > 0)
+            {
+                Win32TextInjection.SendBackspace(charsToDelete);
+            }
+            Win32TextInjection.SendText(wordToInsert + " ");
+            LearnAcceptedSuggestion(wordToInsert);
+            _loggingService.Information($"Inserted: {wordToInsert}");
+            UpdateSuggestions(string.Empty);
         }
     }
 
@@ -205,9 +345,19 @@ public class ApplicationService : IDisposable
         }
     }
 
+    private string _previousWord = string.Empty;
+
     private void OnWordTyped(string word)
     {
         LearnWordOrPhrase(word);
+
+        // Learn bigram: previous word → current word
+        if (!string.IsNullOrWhiteSpace(_previousWord) && !string.IsNullOrWhiteSpace(word))
+        {
+            _predictionService.LearnBigram(_previousWord, word);
+        }
+        _previousWord = word.Trim().ToLowerInvariant();
+
         AppendContext(word);
     }
 
@@ -221,14 +371,22 @@ public class ApplicationService : IDisposable
 
         _predictionService.LearnPhrase(normalized);
         _recentWords.Clear();
+        _previousWord = string.Empty;
     }
 
     private void LearnAcceptedSuggestion(string acceptedText)
     {
         LearnWordOrPhrase(acceptedText);
 
-        foreach (var part in acceptedText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        var parts = acceptedText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var part in parts)
         {
+            // Learn bigrams from accepted suggestion words too
+            if (!string.IsNullOrWhiteSpace(_previousWord) && !string.IsNullOrWhiteSpace(part))
+            {
+                _predictionService.LearnBigram(_previousWord, part);
+            }
+            _previousWord = part.Trim().ToLowerInvariant();
             AppendContext(part);
         }
     }
@@ -310,10 +468,20 @@ public class ApplicationService : IDisposable
 
     public void Dispose()
     {
+        _focusCheckTimer.Stop();
+        _focusCheckTimer.Dispose();
         _inputService.Dispose();
         _overlayService.Dispose();
         _hotkeyService.Dispose();
         _trayIconService.Dispose();
+        if (_predictionService is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+        if (_speechService is IDisposable speechDisposable)
+        {
+            speechDisposable.Dispose();
+        }
         _loggingService.Information("Application shutdown");
     }
 }

@@ -90,6 +90,11 @@ public class OverlayService : IOverlayService, IDisposable
         }
     }
 
+    public void FlashSelection(int slot)
+    {
+        RunOnUiThread(() => _overlayWindow?.FlashSelection(slot));
+    }
+
     public void SetLayout(OverlayLayout layout)
     {
         _layout = layout;
@@ -100,6 +105,11 @@ public class OverlayService : IOverlayService, IDisposable
     }
 
     public OverlayLayout GetCurrentLayout() => _layout;
+
+    public void SetContextMode(string? contextText)
+    {
+        RunOnUiThread(() => _overlayWindow?.SetContextMode(contextText));
+    }
 
     public void PositionNearCaret(int x, int y)
     {

@@ -16,6 +16,9 @@ public partial class OverlayWindow : Window
     private OverlayLayout? _lockedLayout = null; // Prevents flipping while typing
     private DateTime _layoutLockTime = DateTime.MinValue;
     private readonly TimeSpan _layoutLockDuration = TimeSpan.FromSeconds(30); // Lock layout for 30s after typing starts
+    private static readonly Duration OverlayRefreshDuration = new(TimeSpan.FromMilliseconds(90));
+    private static readonly Duration SuggestionFadeDuration = new(TimeSpan.FromMilliseconds(85));
+    private static readonly Duration SuggestionSlideDuration = new(TimeSpan.FromMilliseconds(90));
 
     public event EventHandler<int>? SuggestionSelected;
     public event EventHandler? NextPageRequested;
@@ -60,13 +63,19 @@ public partial class OverlayWindow : Window
         {
             var wasHidden = !IsVisible;
             Show();
-            // Subtle fade-in (100ms max) — only on first show
             if (wasHidden)
             {
                 Opacity = 0;
                 var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(80));
                 BeginAnimation(OpacityProperty, fadeIn);
+                AnimateOverlayRefresh();
             }
+            else
+            {
+                AnimateOverlayRefresh();
+            }
+
+            AnimateSuggestionItems();
         }
         else
         {
@@ -169,6 +178,19 @@ public partial class OverlayWindow : Window
         ApplyLayout();
     }
 
+    public void SetContextMode(string? contextText)
+    {
+        if (string.IsNullOrWhiteSpace(contextText))
+        {
+            ContextBanner.Visibility = Visibility.Collapsed;
+        }
+        else
+        {
+            ContextLabel.Text = contextText;
+            ContextBanner.Visibility = Visibility.Visible;
+        }
+    }
+
     public void HideSuggestions()
     {
         Hide();
@@ -176,24 +198,23 @@ public partial class OverlayWindow : Window
 
     private Button CreateSuggestionButton(SuggestionItem suggestion)
     {
-        // Create the content with slot number and text
         var stackPanel = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        // Slot number badge — prominent, high contrast
+        // Pill-shaped number badge
         var badgeBorder = new Border
         {
             Style = (Style)FindResource("SlotBadgeStyle"),
             Child = new TextBlock
             {
                 Text = suggestion.Slot.ToString(),
-                FontSize = 12,
+                FontSize = 12.5,
                 FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x11, 0x11, 0x11)),
+                Foreground = new SolidColorBrush(Color.FromRgb(0x0F, 0x0F, 0x14)),
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center
             }
@@ -201,12 +222,13 @@ public partial class OverlayWindow : Window
 
         stackPanel.Children.Add(badgeBorder);
 
-        // Suggestion text — 16px minimum
+        // Suggestion text — clear, readable
         var textBlock = new TextBlock
         {
             Text = suggestion.DisplayText,
-            FontSize = 16,
+            FontSize = 17,
             FontFamily = new FontFamily("Segoe UI"),
+            FontWeight = FontWeights.Normal,
             Foreground = (Brush)FindResource("TextPrimary"),
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -218,9 +240,17 @@ public partial class OverlayWindow : Window
             Content = stackPanel,
             Tag = suggestion.Slot,
             Style = (Style)FindResource("SuggestionButtonStyle"),
+            Opacity = 0,
             Margin = _currentLayout == OverlayLayout.Horizontal
-                ? new Thickness(4, 0, 4, 0)
-                : new Thickness(0, 4, 0, 4)
+                ? new Thickness(3, 0, 3, 0)
+                : new Thickness(0, 3, 0, 3)
+        };
+
+        button.RenderTransformOrigin = new Point(0.5, 0.5);
+        button.RenderTransform = new TranslateTransform
+        {
+            X = _currentLayout == OverlayLayout.Horizontal ? 8 : 0,
+            Y = _currentLayout == OverlayLayout.Vertical ? 8 : 0
         };
 
         button.Click += (s, e) =>
@@ -239,7 +269,32 @@ public partial class OverlayWindow : Window
         var suggestion = _currentSuggestions.FirstOrDefault(s => s.Slot == slot);
         if (suggestion != null)
         {
+            FlashSelection(slot);
             SuggestionSelected?.Invoke(this, slot);
+        }
+    }
+
+    /// <summary>
+    /// Brief green flash on the selected suggestion button for instant visual feedback.
+    /// </summary>
+    public void FlashSelection(int slot)
+    {
+        foreach (var child in SuggestionsContainer.Children.OfType<Button>())
+        {
+            if (child.Tag is int btnSlot && btnSlot == slot)
+            {
+                var border = child.Template?.FindName("border", child) as System.Windows.Controls.Border;
+                if (border != null)
+                {
+                    var flash = new ColorAnimation(
+                        Color.FromRgb(0x4A, 0xDE, 0x80), // AccentGreen
+                        Color.FromRgb(0x1E, 0x1F, 0x2A), // Back to CardBackground
+                        TimeSpan.FromMilliseconds(90));
+                    border.Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x1F, 0x2A));
+                    ((SolidColorBrush)border.Background).BeginAnimation(SolidColorBrush.ColorProperty, flash);
+                }
+                break;
+            }
         }
     }
 
@@ -353,6 +408,67 @@ public partial class OverlayWindow : Window
                 textBlock.FontSize = baseFontSize;
             }
             child.MinHeight = largeTextMode ? 52 : 44;
+        }
+    }
+
+    private void AnimateOverlayRefresh()
+    {
+        OverlayBorder.RenderTransformOrigin = new Point(0.5, 0.5);
+
+        if (OverlayBorder.RenderTransform is not ScaleTransform scaleTransform)
+        {
+            scaleTransform = new ScaleTransform(1, 1);
+            OverlayBorder.RenderTransform = scaleTransform;
+        }
+
+        var scaleX = new DoubleAnimation(0.985, 1, OverlayRefreshDuration)
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+        };
+        var scaleY = new DoubleAnimation(0.985, 1, OverlayRefreshDuration)
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+        };
+
+        scaleTransform.BeginAnimation(ScaleTransform.ScaleXProperty, scaleX);
+        scaleTransform.BeginAnimation(ScaleTransform.ScaleYProperty, scaleY);
+    }
+
+    private void AnimateSuggestionItems()
+    {
+        for (var index = 0; index < SuggestionsContainer.Children.Count; index++)
+        {
+            if (SuggestionsContainer.Children[index] is not Button button)
+            {
+                continue;
+            }
+
+            var beginTime = TimeSpan.FromMilliseconds(Math.Min(index * 15, 75));
+            var fadeAnimation = new DoubleAnimation(0, 1, SuggestionFadeDuration)
+            {
+                BeginTime = beginTime,
+                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+            };
+
+            button.BeginAnimation(OpacityProperty, fadeAnimation);
+
+            if (button.RenderTransform is not TranslateTransform translateTransform)
+            {
+                continue;
+            }
+
+            var property = _currentLayout == OverlayLayout.Horizontal
+                ? TranslateTransform.XProperty
+                : TranslateTransform.YProperty;
+
+            var fromOffset = _currentLayout == OverlayLayout.Horizontal ? 10d : 10d;
+            var slideAnimation = new DoubleAnimation(fromOffset, 0, SuggestionSlideDuration)
+            {
+                BeginTime = beginTime,
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+
+            translateTransform.BeginAnimation(property, slideAnimation);
         }
     }
 }

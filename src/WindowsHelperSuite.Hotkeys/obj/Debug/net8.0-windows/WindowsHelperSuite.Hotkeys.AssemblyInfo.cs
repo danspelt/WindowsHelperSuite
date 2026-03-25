@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("WindowsHelperSuite.Hotkeys")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+c972fa6fd5433637611753ca1e11d5e2037410ea")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+82b2cce930c64f465fc5c971f6187345ad93cb28")]
 [assembly: System.Reflection.AssemblyProductAttribute("WindowsHelperSuite.Hotkeys")]
 [assembly: System.Reflection.AssemblyTitleAttribute("WindowsHelperSuite.Hotkeys")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

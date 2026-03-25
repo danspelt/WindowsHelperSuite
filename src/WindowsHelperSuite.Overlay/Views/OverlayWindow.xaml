@@ -14,7 +14,7 @@
         Width="Auto"
         Height="Auto"
         SizeToContent="WidthAndHeight"
-        MaxWidth="620"
+        MaxWidth="660"
         UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextHintingMode="Animated"
@@ -22,24 +22,32 @@
         FontFamily="Segoe UI">
 
     <Window.Resources>
-        <!-- Accessibility-first dark palette -->
-        <SolidColorBrush x:Key="PrimaryBackground" Color="#111111"/>
-        <SolidColorBrush x:Key="SecondaryBackground" Color="#1A1A1A"/>
+        <!-- Modern dark palette with depth -->
+        <SolidColorBrush x:Key="PrimaryBackground" Color="#0F0F14"/>
+        <SolidColorBrush x:Key="SecondaryBackground" Color="#1A1B23"/>
+        <SolidColorBrush x:Key="CardBackground" Color="#1E1F2A"/>
+        <SolidColorBrush x:Key="CardHover" Color="#252636"/>
         <SolidColorBrush x:Key="AccentGreen" Color="#4ADE80"/>
+        <SolidColorBrush x:Key="AccentGreenDim" Color="#2A5A3E"/>
         <SolidColorBrush x:Key="AccentBlue" Color="#60A5FA"/>
-        <SolidColorBrush x:Key="TextPrimary" Color="#FFFFFF"/>
-        <SolidColorBrush x:Key="TextSecondary" Color="#999999"/>
-        <SolidColorBrush x:Key="BorderColor" Color="#333333"/>
+        <SolidColorBrush x:Key="TextPrimary" Color="#F0F0F5"/>
+        <SolidColorBrush x:Key="TextSecondary" Color="#6B7280"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#4B5563"/>
+        <SolidColorBrush x:Key="BorderColor" Color="#2A2B36"/>
+        <SolidColorBrush x:Key="BorderSubtle" Color="#222330"/>
+        <SolidColorBrush x:Key="AccentPurple" Color="#A78BFA"/>
+        <SolidColorBrush x:Key="ContextBackground" Color="#16171F"/>
+        <SolidColorBrush x:Key="AccentStripe" Color="#4ADE80"/>
 
-        <!-- Suggestion button style — large targets, no hover, high contrast -->
+        <!-- Suggestion button style — modern card, large targets, high contrast -->
         <Style x:Key="SuggestionButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource SecondaryBackground}"/>
+            <Setter Property="Background" Value="{StaticResource CardBackground}"/>
             <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderColor}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderSubtle}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="14,10"/>
-            <Setter Property="MinWidth" Value="64"/>
-            <Setter Property="MinHeight" Value="44"/>
+            <Setter Property="Padding" Value="12,10,16,10"/>
+            <Setter Property="MinWidth" Value="72"/>
+            <Setter Property="MinHeight" Value="46"/>
             <Setter Property="FontSize" Value="16"/>
             <Setter Property="FontFamily" Value="Segoe UI"/>
             <Setter Property="FontWeight" Value="Normal"/>
@@ -52,10 +60,10 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="8"
+                                CornerRadius="10"
                                 Padding="{TemplateBinding Padding}"
                                 SnapsToDevicePixels="True">
-                            <ContentPresenter HorizontalAlignment="Center"
+                            <ContentPresenter HorizontalAlignment="Left"
                                             VerticalAlignment="Center"
                                             TextBlock.Foreground="{TemplateBinding Foreground}"/>
                         </Border>
@@ -64,79 +72,109 @@
             </Setter>
         </Style>
 
-        <!-- Number badge style — prominent, accessible -->
+        <!-- Number badge — pill shape, bold -->
         <Style x:Key="SlotBadgeStyle" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource AccentGreen}"/>
-            <Setter Property="CornerRadius" Value="5"/>
-            <Setter Property="Padding" Value="6,2"/>
-            <Setter Property="Margin" Value="0,0,8,0"/>
-            <Setter Property="MinWidth" Value="22"/>
-            <Setter Property="Height" Value="22"/>
+            <Setter Property="CornerRadius" Value="7"/>
+            <Setter Property="Padding" Value="7,2"/>
+            <Setter Property="Margin" Value="0,0,10,0"/>
+            <Setter Property="MinWidth" Value="24"/>
+            <Setter Property="Height" Value="24"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
         </Style>
     </Window.Resources>
 
     <!-- Shadow wrapper -->
     <Border Background="Transparent"
-            Margin="8">
+            Margin="10">
         <Border.Effect>
             <DropShadowEffect Color="#000000"
-                            BlurRadius="20"
-                            ShadowDepth="4"
-                            Opacity="0.5"
+                            BlurRadius="28"
+                            ShadowDepth="6"
+                            Opacity="0.55"
                             Direction="270"/>
         </Border.Effect>
 
-        <!-- Main overlay border -->
-        <Border x:Name="OverlayBorder"
-                Background="{StaticResource PrimaryBackground}"
-                BorderBrush="{StaticResource BorderColor}"
-                BorderThickness="1"
-                CornerRadius="12"
-                Padding="14"
-                MinHeight="80">
+        <!-- Outer clip for accent stripe -->
+        <Grid>
+            <!-- Main overlay border -->
+            <Border x:Name="OverlayBorder"
+                    Background="{StaticResource PrimaryBackground}"
+                    BorderBrush="{StaticResource BorderColor}"
+                    BorderThickness="1"
+                    CornerRadius="14"
+                    Padding="16,12,16,12"
+                    MinHeight="80">
 
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-                <!-- Suggestions Container -->
-                <StackPanel x:Name="SuggestionsContainer"
-                            Grid.Row="0"
-                            Orientation="Horizontal"
-                            HorizontalAlignment="Center"
-                            VerticalAlignment="Center">
-                </StackPanel>
+                    <!-- Accent stripe at top -->
+                    <Border Grid.Row="0"
+                            Background="{StaticResource AccentStripe}"
+                            Height="3"
+                            CornerRadius="2"
+                            Margin="0,0,0,12"
+                            Opacity="0.6"/>
 
-                <!-- Footer: paging + keyboard hints -->
-                <Grid Grid.Row="1" Margin="0,8,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
+                    <!-- Context mode indicator -->
+                    <Border x:Name="ContextBanner"
+                            Grid.Row="1"
+                            Background="{StaticResource ContextBackground}"
+                            CornerRadius="8"
+                            Padding="10,6"
+                            Margin="0,0,0,12"
+                            Visibility="Collapsed">
+                        <TextBlock x:Name="ContextLabel"
+                                   FontSize="12"
+                                   FontFamily="Segoe UI"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource AccentPurple}"
+                                   HorizontalAlignment="Left"
+                                   VerticalAlignment="Center"/>
+                    </Border>
 
-                    <!-- Paging indicator -->
-                    <TextBlock x:Name="PagingIndicator"
-                               Grid.Column="0"
-                               Text=""
-                               FontSize="12"
-                               FontFamily="Segoe UI"
-                               Foreground="{StaticResource TextSecondary}"
-                               VerticalAlignment="Center"
-                               Visibility="Collapsed"/>
+                    <!-- Suggestions Container -->
+                    <StackPanel x:Name="SuggestionsContainer"
+                                Grid.Row="2"
+                                Orientation="Horizontal"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center">
+                    </StackPanel>
 
-                    <!-- Keyboard hints -->
-                    <TextBlock Grid.Column="2"
-                               Text="1-9 select · 0 next · Esc close"
-                               FontSize="11"
-                               FontFamily="Segoe UI"
-                               Foreground="{StaticResource TextSecondary}"
-                               VerticalAlignment="Center"/>
+                    <!-- Footer: paging + keyboard hints -->
+                    <Grid Grid.Row="3" Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Paging indicator -->
+                        <TextBlock x:Name="PagingIndicator"
+                                   Grid.Column="0"
+                                   Text=""
+                                   FontSize="11"
+                                   FontFamily="Segoe UI"
+                                   Foreground="{StaticResource TextMuted}"
+                                   VerticalAlignment="Center"
+                                   Visibility="Collapsed"/>
+
+                        <!-- Keyboard hints -->
+                        <TextBlock Grid.Column="2"
+                                   Text="1-9 pick · 0/- page · Esc close"
+                                   FontSize="10.5"
+                                   FontFamily="Segoe UI"
+                                   Foreground="{StaticResource TextMuted}"
+                                   VerticalAlignment="Center"/>
+                    </Grid>
                 </Grid>
-            </Grid>
-        </Border>
+            </Border>
+        </Grid>
     </Border>
 </Window>

@@ -4,121 +4,181 @@ using System.Windows.Forms;
 namespace WindowsHelperSuite.Infrastructure.Hooks;
 
 /// <summary>
-/// Helper class for injecting text into the active window using Win32 API
+/// Injects text into the focused window via clipboard paste or Unicode keystrokes.
 /// </summary>
 public static class Win32TextInjection
 {
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-
     [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
-    [DllImport("kernel32.dll")]
-    private static extern uint GetCurrentThreadId();
+    // INPUT struct must match native size (40 bytes on 64-bit).
+    // The union must be 32 bytes (size of MOUSEINPUT, the largest member).
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT
+    {
+        public uint type;
+        public INPUTUNION u;
+    }
 
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetFocus();
+    [StructLayout(LayoutKind.Explicit, Size = 32)]
+    private struct INPUTUNION
+    {
+        [FieldOffset(0)] public KEYBDINPUT ki;
+    }
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
 
+    private const uint INPUT_KEYBOARD = 1;
     private const uint KEYEVENTF_KEYUP = 0x0002;
+    private const uint KEYEVENTF_UNICODE = 0x0004;
+    private const ushort VK_BACK = 0x08;
+    private const ushort VK_CONTROL = 0x11;
+    private const ushort VK_V = 0x56;
 
     /// <summary>
-    /// Sends text to the currently focused window
+    /// Sends text to the currently focused window.
+    /// Tries clipboard paste first, falls back to Unicode keystrokes.
     /// </summary>
     public static void SendText(string text)
     {
         if (string.IsNullOrEmpty(text))
             return;
 
-        // Use SendKeys for simple text injection
-        // This works reliably for most applications
-        try
-        {
-            // Ensure we're sending to the foreground window
-            var foregroundWindow = GetForegroundWindow();
-            if (foregroundWindow == IntPtr.Zero)
-                return;
+        // Try clipboard paste (fast for multi-character text)
+        if (TryClipboardPaste(text))
+            return;
 
-            // Temporarily attach to the foreground thread to ensure focus
-            uint foregroundThreadId = GetWindowThreadProcessId(foregroundWindow, out _);
-            uint currentThreadId = GetCurrentThreadId();
-
-            if (foregroundThreadId != currentThreadId)
-            {
-                AttachThreadInput(currentThreadId, foregroundThreadId, true);
-            }
-
-            // Send the text using SendKeys
-            // Escape special characters for SendKeys
-            string escapedText = EscapeForSendKeys(text);
-            SendKeys.SendWait(escapedText);
-
-            if (foregroundThreadId != currentThreadId)
-            {
-                AttachThreadInput(currentThreadId, foregroundThreadId, false);
-            }
-        }
-        catch (Exception ex)
-        {
-            // Log error but don't crash
-            System.Diagnostics.Debug.WriteLine($"Text injection failed: {ex.Message}");
-        }
+        // Fallback: type each character as a Unicode keystroke
+        System.Diagnostics.Debug.WriteLine($"Clipboard paste failed, using Unicode keystrokes for: \"{text}\"");
+        SendUnicodeChars(text);
     }
 
     /// <summary>
-    /// Sends backspace key to delete characters
+    /// Sends backspace keys to delete characters.
     /// </summary>
     public static void SendBackspace(int count)
     {
-        try
+        for (int i = 0; i < count; i++)
         {
-            for (int i = 0; i < count; i++)
-            {
-                SendKeys.SendWait("{BACKSPACE}");
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Backspace injection failed: {ex.Message}");
+            SendKeyPress(VK_BACK);
+            Thread.Sleep(10);
         }
     }
 
-    /// <summary>
-    /// Escapes special characters for SendKeys
-    /// </summary>
-    private static string EscapeForSendKeys(string text)
+    private static bool TryClipboardPaste(string text)
     {
-        var result = new System.Text.StringBuilder();
-        foreach (char c in text)
+        try
         {
-            switch (c)
+            // Save current clipboard
+            string? saved = null;
+            try { saved = Clipboard.ContainsText() ? Clipboard.GetText() : null; } catch { }
+
+            // Try to set clipboard text with retries
+            for (int i = 0; i < 5; i++)
             {
-                case '+':
-                case '^':
-                case '%':
-                case '~':
-                case '(':
-                case ')':
-                case '{':
-                case '}':
-                case '[':
-                case ']':
-                    result.Append($"{{{c}}}");
-                    break;
-                case ' ':
-                    result.Append(" ");
-                    break;
-                default:
-                    result.Append(c);
-                    break;
+                try
+                {
+                    Clipboard.SetText(text, TextDataFormat.UnicodeText);
+
+                    // Verify it was set correctly
+                    var check = Clipboard.GetText();
+                    if (check == text)
+                    {
+                        // Send Ctrl+V
+                        Thread.Sleep(20);
+                        SendCtrlV();
+                        Thread.Sleep(40);
+
+                        // Restore clipboard
+                        try
+                        {
+                            if (saved != null)
+                                Clipboard.SetText(saved, TextDataFormat.UnicodeText);
+                        }
+                        catch { }
+
+                        return true;
+                    }
+                }
+                catch { }
+                Thread.Sleep(30);
             }
+
+            System.Diagnostics.Debug.WriteLine("Clipboard paste: all attempts failed");
+            return false;
         }
-        return result.ToString();
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Clipboard paste exception: {ex.Message}");
+            return false;
+        }
+    }
+
+    private static void SendUnicodeChars(string text)
+    {
+        foreach (var ch in text)
+        {
+            var inputs = new INPUT[2];
+            inputs[0] = MakeUnicodeInput(ch, 0);
+            inputs[1] = MakeUnicodeInput(ch, KEYEVENTF_KEYUP);
+            var sent = SendInput(2, inputs, Marshal.SizeOf<INPUT>());
+            if (sent != 2)
+                System.Diagnostics.Debug.WriteLine($"SendInput returned {sent} for char '{ch}'");
+        }
+    }
+
+    private static void SendKeyPress(ushort vk)
+    {
+        var inputs = new INPUT[2];
+        inputs[0] = MakeKeyInput(vk, 0);
+        inputs[1] = MakeKeyInput(vk, KEYEVENTF_KEYUP);
+        SendInput(2, inputs, Marshal.SizeOf<INPUT>());
+    }
+
+    private static void SendCtrlV()
+    {
+        var inputs = new INPUT[4];
+        inputs[0] = MakeKeyInput(VK_CONTROL, 0);
+        inputs[1] = MakeKeyInput(VK_V, 0);
+        inputs[2] = MakeKeyInput(VK_V, KEYEVENTF_KEYUP);
+        inputs[3] = MakeKeyInput(VK_CONTROL, KEYEVENTF_KEYUP);
+        SendInput(4, inputs, Marshal.SizeOf<INPUT>());
+    }
+
+    private static INPUT MakeKeyInput(ushort vk, uint flags)
+    {
+        return new INPUT
+        {
+            type = INPUT_KEYBOARD,
+            u = new INPUTUNION
+            {
+                ki = new KEYBDINPUT { wVk = vk, dwFlags = flags }
+            }
+        };
+    }
+
+    private static INPUT MakeUnicodeInput(char ch, uint extraFlags)
+    {
+        return new INPUT
+        {
+            type = INPUT_KEYBOARD,
+            u = new INPUTUNION
+            {
+                ki = new KEYBDINPUT
+                {
+                    wVk = 0,
+                    wScan = (ushort)ch,
+                    dwFlags = KEYEVENTF_UNICODE | extraFlags
+                }
+            }
+        };
     }
 }

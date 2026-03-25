@@ -12,6 +12,7 @@ public class KeyboardHookService : IDisposable
     private Win32KeyboardHook.LowLevelKeyboardProc? _hookCallback;
     private readonly Dictionary<string, (uint keyCode, bool ctrl, bool alt, bool shift)> _registeredHotkeys = [];
     private readonly HashSet<uint> _pressedKeys = [];
+    private readonly HashSet<uint> _suppressedKeys = []; // Track keys whose key-UP should also be eaten
     private readonly ILoggingService _loggingService;
 
     public event EventHandler<string>? HotkeyPressed;
@@ -71,19 +72,24 @@ public class KeyboardHookService : IDisposable
         {
             if (nCode >= 0)
             {
-                var vkCode = (uint)Marshal.ReadInt32(lParam);
+                var hookStruct = Marshal.PtrToStructure<Win32KeyboardHook.KBDLLHOOKSTRUCT>(lParam);
+                var vkCode = hookStruct.vkCode;
                 var isKeyDown = wParam == (IntPtr)Win32KeyboardHook.WM_KEYDOWN ||
                                wParam == (IntPtr)Win32KeyboardHook.WM_SYSKEYDOWN;
                 var isKeyUp = wParam == (IntPtr)Win32KeyboardHook.WM_KEYUP ||
                              wParam == (IntPtr)Win32KeyboardHook.WM_SYSKEYUP;
 
+                // Skip keystrokes injected by our own SendInput (clipboard paste, backspace)
+                if ((hookStruct.flags & Win32KeyboardHook.LLKHF_INJECTED) != 0)
+                {
+                    return Win32KeyboardHook.CallNextHookEx(_hookId, nCode, wParam, lParam);
+                }
+
                 if (isKeyDown)
                 {
-                    _loggingService.Debug($"HookCallback: Key {vkCode} (0x{vkCode:X}) pressed");
                     _pressedKeys.Add(vkCode);
                     CheckHotkeys();
 
-                    // Broadcast key press to InputService
                     var ctrlPressed = _pressedKeys.Contains(0x11) || _pressedKeys.Contains(0xA2) || _pressedKeys.Contains(0xA3);
                     var altPressed = _pressedKeys.Contains(0x12) || _pressedKeys.Contains(0xA4) || _pressedKeys.Contains(0xA5);
                     var shiftPressed = _pressedKeys.Contains(0x10) || _pressedKeys.Contains(0xA0) || _pressedKeys.Contains(0xA1);
@@ -91,16 +97,21 @@ public class KeyboardHookService : IDisposable
                     var args = new KeyEventArgs((int)vkCode, shiftPressed, ctrlPressed, altPressed, Control.IsKeyLocked(Keys.CapsLock));
                     KeyPressed?.Invoke(this, args);
 
-                    // Suppress key if handled
                     if (args.Handled)
                     {
-                        System.Diagnostics.Debug.WriteLine($"KeyboardHook: Key {vkCode} suppressed (Handled=true)");
-                        return (IntPtr)1; // Suppress key
+                        _suppressedKeys.Add(vkCode); // Also suppress the matching key-UP
+                        return (IntPtr)1;
                     }
                 }
                 else if (isKeyUp)
                 {
                     _pressedKeys.Remove(vkCode);
+
+                    // Eat the key-UP for any key whose key-DOWN we suppressed
+                    if (_suppressedKeys.Remove(vkCode))
+                    {
+                        return (IntPtr)1;
+                    }
                 }
             }
         }

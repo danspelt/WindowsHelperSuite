@@ -28,6 +28,7 @@ public class InputService : IInputService, IDisposable
     public event EventHandler? ManualRefreshRequested;
     public event EventHandler? TypingStarted;
     public event EventHandler? TypingStopped;
+    public event EventHandler? OverlayDismissRequested;
     public event EventHandler? InvalidTypingDetected;  // New event for typing without valid text input
 
     public InputService(ILoggingService loggingService)
@@ -60,92 +61,87 @@ public class InputService : IInputService, IDisposable
         if (!IsEnabled) return;
 
         var key = e.KeyCode;
-        _loggingService.Information($"Key pressed: {key} (0x{key:X}), IsEnabled={IsEnabled}");
 
         // Only intercept overlay keys when overlay is actually visible
         if (IsOverlayVisible)
         {
-            // Handle selection keys 1-9 - suppress them so they don't type in document
+            // Handle selection keys 1-9 — suppress FIRST, then fire event
             if (key >= 0x31 && key <= 0x39) // 1-9
             {
-                _loggingService.Information($"Selection key detected: {key - 0x30}, raising event");
-                SelectionKeyPressed?.Invoke(this, (int)(key - 0x30));
                 e.Handled = true;
+                SelectionKeyPressed?.Invoke(this, (int)(key - 0x30));
                 return;
             }
 
             // Handle 0 (next page) and - (prev page)
             if (key == 0x30) // 0
             {
-                NextPageKeyPressed?.Invoke(this, EventArgs.Empty);
                 e.Handled = true;
+                NextPageKeyPressed?.Invoke(this, EventArgs.Empty);
                 return;
             }
             if (key == 0xBD || key == 0x6D) // - key
             {
-                PreviousPageKeyPressed?.Invoke(this, EventArgs.Empty);
                 e.Handled = true;
+                PreviousPageKeyPressed?.Invoke(this, EventArgs.Empty);
                 return;
             }
 
             // Handle grave key (`) for manual refresh
             if (key == 0xC0) // ` key
             {
-                ManualRefreshRequested?.Invoke(this, EventArgs.Empty);
                 e.Handled = true;
+                ManualRefreshRequested?.Invoke(this, EventArgs.Empty);
                 return;
             }
 
-            // Esc closes overlay and stops typing session
-            if (key == 0x1B) // Escape
+            // Esc or Tab closes overlay and stops typing session
+            if (key == 0x1B || key == 0x09) // Escape or Tab
             {
                 _currentWord.Clear();
                 _typingInProgress = false;
                 _hasValidTextInput = false;
                 _inactivityTimer.Stop();
+                OverlayDismissRequested?.Invoke(this, EventArgs.Empty);
                 TypingStopped?.Invoke(this, EventArgs.Empty);
-                e.Handled = true;
+                if (key == 0x1B) e.Handled = true; // Only suppress Escape, let Tab through
                 return;
             }
         }
 
         if (TryGetTypedCharacter(e, out var typedChar) && !e.Ctrl && !e.Alt)
         {
-            // Check if this is first keystroke after idle (timer not running)
-            var wasIdle = !_inactivityTimer.Enabled && !_typingInProgress;
-
-            // Reset inactivity timer
-            _inactivityTimer.Stop();
-            _inactivityTimer.Start();
-
-            // Trigger typing started on first keystroke (only if there's a text input)
-            if (wasIdle)
+            // Re-validate whenever we don't have a confirmed typing session
+            if (!_typingInProgress || !_hasValidTextInput)
             {
-                // Check if there's an active text input (caret available)
                 var hasCaret = Win32Caret.GetCaretPosition(out var caretX, out var caretY);
                 var focusedElement = Win32Caret.DescribeFocusedElement();
-                // Position (0,0) usually means no real caret - reject it
                 var isValidCaret = hasCaret && (caretX != 0 || caretY != 0);
-                _loggingService.Information($"Caret check: hasCaret={hasCaret}, pos=({caretX},{caretY}), valid={isValidCaret}, focused={focusedElement}");
+                _loggingService.Debug($"Caret check: hasCaret={hasCaret}, pos=({caretX},{caretY}), valid={isValidCaret}, focused={focusedElement}");
                 if (!isValidCaret)
                 {
-                    _loggingService.Information($"No text input detected, skipping overlay. focused={focusedElement}");
                     _hasValidTextInput = false;
-                    InvalidTypingDetected?.Invoke(this, EventArgs.Empty);  // Hide overlay if visible
-                    return; // No text input focused, don't show overlay
+                    InvalidTypingDetected?.Invoke(this, EventArgs.Empty);
+                    return;
                 }
 
-                _loggingService.Information($"Text input detected, showing overlay. focused={focusedElement}");
-                _typingInProgress = true;
-                _hasValidTextInput = true;
-                TypingStarted?.Invoke(this, EventArgs.Empty);
+                // Valid text input confirmed — start session
+                if (!_typingInProgress)
+                {
+                    _loggingService.Information($"Text input detected, showing overlay. focused={focusedElement}");
+                    _typingInProgress = true;
+                    _hasValidTextInput = true;
+                    TypingStarted?.Invoke(this, EventArgs.Empty);
+                }
+                else
+                {
+                    _hasValidTextInput = true;
+                }
             }
 
-            // Only process text if we have valid text input
-            if (!_hasValidTextInput)
-            {
-                return; // Skip processing - no valid text input
-            }
+            // Reset inactivity timer only after we have a valid session
+            _inactivityTimer.Stop();
+            _inactivityTimer.Start();
 
             if (char.IsLetterOrDigit(typedChar) || typedChar == '\'' || typedChar == '-')
             {
@@ -174,10 +170,34 @@ public class InputService : IInputService, IDisposable
         }
         else if (key == 0x08) // Backspace
         {
-            if (_currentWord.Length > 0 && _hasValidTextInput)
+            if (_hasValidTextInput)
             {
-                _currentWord.Length--;
+                _inactivityTimer.Stop();
+                _inactivityTimer.Start();
+
+                if (_currentWord.Length > 0)
+                {
+                    _currentWord.Length--;
+                }
+                else if (_currentSentence.Length > 0)
+                {
+                    // Also trim sentence buffer so context stays in sync
+                    _currentSentence.Length--;
+                }
                 TextCaptured?.Invoke(this, _currentWord.ToString());
+            }
+            else if (_typingInProgress)
+            {
+                // Session active but text input not validated yet — re-validate
+                var hasCaret = Win32Caret.GetCaretPosition(out var cx, out var cy);
+                if (hasCaret && (cx != 0 || cy != 0))
+                {
+                    _hasValidTextInput = true;
+                    _inactivityTimer.Stop();
+                    _inactivityTimer.Start();
+                    if (_currentWord.Length > 0) _currentWord.Length--;
+                    TextCaptured?.Invoke(this, _currentWord.ToString());
+                }
             }
         }
         else if (key == 0x0D) // Enter
@@ -188,6 +208,7 @@ public class InputService : IInputService, IDisposable
             _typingInProgress = false;
             _hasValidTextInput = false;
             _inactivityTimer.Stop();
+            OverlayDismissRequested?.Invoke(this, EventArgs.Empty);
             TypingStopped?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -205,6 +226,14 @@ public class InputService : IInputService, IDisposable
     public void ClearCurrentWord()
     {
         _currentWord.Clear();
+    }
+
+    public void ResetAfterInsertion()
+    {
+        _currentWord.Clear();
+        // Keep sentence and session alive — user is still typing
+        _inactivityTimer.Stop();
+        _inactivityTimer.Start();
     }
 
     private void CompleteCurrentWord()
@@ -276,6 +305,15 @@ public class InputService : IInputService, IDisposable
                 ? key switch
                 {
                     0x31 => '!',
+                    0x32 => '@',
+                    0x33 => '#',
+                    0x34 => '$',
+                    0x35 => '%',
+                    0x36 => '^',
+                    0x37 => '&',
+                    0x38 => '*',
+                    0x39 => '(',
+                    0x30 => ')',
                     _ => '\0'
                 }
                 : (char)key;
@@ -291,14 +329,22 @@ public class InputService : IInputService, IDisposable
         typedChar = key switch
         {
             0x20 => ' ',
-            0x09 => '\t',
             0xBD => e.Shift ? '_' : '-',
+            0xBB => e.Shift ? '+' : '=',
             0xBE => e.Shift ? '>' : '.',
             0xBF => e.Shift ? '?' : '/',
             0xBA => e.Shift ? ':' : ';',
             0xDE => e.Shift ? '"' : '\'',
             0xBC => e.Shift ? '<' : ',',
+            0xDB => e.Shift ? '{' : '[',
+            0xDD => e.Shift ? '}' : ']',
+            0xDC => e.Shift ? '|' : '\\',
+            0xC0 => e.Shift ? '~' : '`',
             0x6E => '.',
+            0x6A => '*',
+            0x6B => '+',
+            0x6D => '-',
+            0x6F => '/',
             _ => '\0'
         };
 
