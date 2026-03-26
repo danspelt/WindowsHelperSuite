@@ -1,6 +1,8 @@
 
 bin/
 obj/
+[Dd]ebug/
+[Rr]elease/
 
 .vs/
 .vscode/
@@ -11,6 +13,8 @@ obj/
 
 TestResults/
 artifacts/
+publish/
+out/
 
 *.log
 logs/
@@ -25,4 +29,13 @@ src/**/obj/
 *.tmp
 *.temp
 *.cache
+
+# Build outputs
+*.dll
+*.exe
+*.pdb
+*.nupkg
+*.snupkg
+project.assets.json
+*.nuget.g.*
 
