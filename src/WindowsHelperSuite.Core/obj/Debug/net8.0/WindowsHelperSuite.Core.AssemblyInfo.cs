@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("WindowsHelperSuite.Core")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+82b2cce930c64f465fc5c971f6187345ad93cb28")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ca2d1e870ecf86a5efb30784801b6502a4c52491")]
 [assembly: System.Reflection.AssemblyProductAttribute("WindowsHelperSuite.Core")]
 [assembly: System.Reflection.AssemblyTitleAttribute("WindowsHelperSuite.Core")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

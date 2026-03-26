@@ -8,6 +8,6 @@ build_property.PlatformNeutralAssembly =
 build_property.EnforceExtendedAnalyzerRules = 
 build_property._SupportedPlatformList = Linux,macOS,Windows
 build_property.RootNamespace = WindowsHelperSuite.Prediction
-build_property.ProjectDir = C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Prediction\
+build_property.ProjectDir = c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Prediction\
 build_property.EnableComHosting = 
 build_property.EnableGeneratedComInterfaceComImportInterop = 

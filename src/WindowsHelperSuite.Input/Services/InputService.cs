@@ -1,6 +1,7 @@
 using System.Text;
 using System.Timers;
 using WindowsHelperSuite.Core.Interfaces;
+using WindowsHelperSuite.Core.Models;
 using WindowsHelperSuite.Infrastructure.Hooks;
 using WindowsHelperSuite.Infrastructure.Services;
 
@@ -12,6 +13,7 @@ public class InputService : IInputService, IDisposable
     private readonly ILoggingService _loggingService;
     private readonly StringBuilder _currentWord = new();
     private readonly StringBuilder _currentSentence = new();
+    private readonly object _bufferLock = new();
     private readonly System.Timers.Timer _inactivityTimer;
     private bool _typingInProgress;
     private bool _hasValidTextInput;
@@ -20,7 +22,10 @@ public class InputService : IInputService, IDisposable
     public bool IsOverlayVisible { get; set; } = false;
 
     public event EventHandler<string>? TextCaptured;
-    public event EventHandler<string>? WordTyped;
+    public event EventHandler<WordTypedEventArgs>? WordTyped;
+
+    /// <summary>Overlay + Ctrl+V — app can suppress native paste and inject transformed text.</summary>
+    public event EventHandler<PasteInterceptEventArgs>? PasteIntercept;
     public event EventHandler<string>? SentenceTyped;
     public event EventHandler<int>? SelectionKeyPressed;
     public event EventHandler? NextPageKeyPressed;
@@ -29,7 +34,7 @@ public class InputService : IInputService, IDisposable
     public event EventHandler? TypingStarted;
     public event EventHandler? TypingStopped;
     public event EventHandler? OverlayDismissRequested;
-    public event EventHandler? InvalidTypingDetected;  // New event for typing without valid text input
+    public event EventHandler? InvalidTypingDetected; // New event for typing without valid text input
 
     public InputService(ILoggingService loggingService)
     {
@@ -56,9 +61,170 @@ public class InputService : IInputService, IDisposable
         _loggingService.Information("Input service stopped");
     }
 
+    /// <summary>
+    /// All completed words in the current sentence (space-separated), excluding the partial word being typed.
+    /// Used as prediction context so the word bank sees the full sentence, not just the last few words.
+    /// </summary>
+    public string GetSuggestionContextPrefix()
+    {
+        lock (_bufferLock)
+        {
+            var s = _currentSentence.ToString();
+            var w = _currentWord.ToString();
+            if (w.Length > 0 && s.Length >= w.Length && s.EndsWith(w, StringComparison.Ordinal))
+            {
+                return s[..^w.Length].TrimEnd();
+            }
+
+            return s.TrimEnd();
+        }
+    }
+
+    /// <summary>
+    /// Full sentence buffer including the current partial word — for overlay display.
+    /// </summary>
+    public string GetFullSentenceForOverlay()
+    {
+        lock (_bufferLock)
+        {
+            return _currentSentence.ToString().TrimEnd();
+        }
+    }
+
+    /// <summary>
+    /// Keeps the internal sentence buffer aligned with the focused control after a programmatic
+    /// backspace + suggestion insert (the keyboard hook does not see injected keys).
+    /// </summary>
+    /// <param name="partialCharacterCount">Characters removed from the partial word before insert.</param>
+    /// <param name="insertedText">Text that was injected (e.g. word + trailing space).</param>
+    public void ApplySuggestionInsertion(int partialCharacterCount, string insertedText)
+    {
+        lock (_bufferLock)
+        {
+            if (partialCharacterCount > 0 && _currentSentence.Length >= partialCharacterCount)
+            {
+                _currentSentence.Length -= partialCharacterCount;
+            }
+
+            if (!string.IsNullOrEmpty(insertedText))
+            {
+                _currentSentence.Append(insertedText);
+            }
+        }
+    }
+
+    /// <summary>Text before the current partial word; not trimmed (so ". " is preserved).</summary>
+    public string GetRawTextBeforeCurrentPartial()
+    {
+        lock (_bufferLock)
+        {
+            var s = _currentSentence.ToString();
+            var w = _currentWord.ToString();
+            if (w.Length > 0 && s.Length >= w.Length && s.EndsWith(w, StringComparison.Ordinal))
+            {
+                return s[..^w.Length];
+            }
+
+            return s;
+        }
+    }
+
+    /// <summary>
+    /// After correcting a completed word in the target app, align the internal sentence buffer.
+    /// Expects the buffer to end with <paramref name="oldWord"/> plus a trailing space.
+    /// </summary>
+    public void ReplaceLastCompletedWord(string oldWord, string newWordWithTrailingSpace)
+    {
+        if (string.IsNullOrEmpty(oldWord))
+        {
+            return;
+        }
+
+        lock (_bufferLock)
+        {
+            var suffix = oldWord + " ";
+            var s = _currentSentence.ToString();
+            if (s.Length >= suffix.Length && s.EndsWith(suffix, StringComparison.Ordinal))
+            {
+                _currentSentence.Length -= suffix.Length;
+                _currentSentence.Append(newWordWithTrailingSpace);
+            }
+        }
+    }
+
+    /// <summary>Merges programmatically injected pasted text into the sentence buffer (keyboard hook does not see paste).</summary>
+    public void AppendPastedPlainText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        lock (_bufferLock)
+        {
+            foreach (var ch in text)
+            {
+                if (ch == '\r')
+                {
+                    continue;
+                }
+
+                if (ch is '\n' or '\t')
+                {
+                    if (_currentWord.Length > 0)
+                    {
+                        _currentWord.Clear();
+                    }
+
+                    AppendSentenceSeparatorLocked(' ');
+                    continue;
+                }
+
+                if (char.IsLetterOrDigit(ch) || ch == '\'' || ch == '-')
+                {
+                    _currentWord.Append(ch);
+                    _currentSentence.Append(ch);
+                }
+                else if (char.IsWhiteSpace(ch))
+                {
+                    if (_currentWord.Length > 0)
+                    {
+                        _currentWord.Clear();
+                    }
+
+                    AppendSentenceSeparatorLocked(' ');
+                }
+                else
+                {
+                    if (_currentWord.Length > 0)
+                    {
+                        _currentWord.Clear();
+                    }
+
+                    _currentSentence.Append(ch);
+                }
+            }
+        }
+    }
+
+    private string GetTextBeforeCurrentWordLocked()
+    {
+        var s = _currentSentence.ToString();
+        var w = _currentWord.ToString();
+        if (w.Length > 0 && s.Length >= w.Length && s.EndsWith(w, StringComparison.Ordinal))
+        {
+            return s[..^w.Length];
+        }
+
+        return s;
+    }
+
     private void OnKeyPressed(object? sender, KeyEventArgs e)
     {
-        if (!IsEnabled) return;
+        if (!IsEnabled)
+        {
+            return;
+        }
 
         var key = e.KeyCode;
 
@@ -80,6 +246,7 @@ public class InputService : IInputService, IDisposable
                 NextPageKeyPressed?.Invoke(this, EventArgs.Empty);
                 return;
             }
+
             if (key == 0xBD || key == 0x6D) // - key
             {
                 e.Handled = true;
@@ -98,15 +265,38 @@ public class InputService : IInputService, IDisposable
             // Esc or Tab closes overlay and stops typing session
             if (key == 0x1B || key == 0x09) // Escape or Tab
             {
-                _currentWord.Clear();
+                lock (_bufferLock)
+                {
+                    _currentWord.Clear();
+                    _currentSentence.Clear();
+                }
+
                 _typingInProgress = false;
                 _hasValidTextInput = false;
                 _inactivityTimer.Stop();
                 OverlayDismissRequested?.Invoke(this, EventArgs.Empty);
                 TypingStopped?.Invoke(this, EventArgs.Empty);
-                if (key == 0x1B) e.Handled = true; // Only suppress Escape, let Tab through
+                if (key == 0x1B)
+                {
+                    e.Handled = true; // Only suppress Escape, let Tab through
+                }
+
                 return;
             }
+        }
+
+        // Paste while overlay visible — app may replace with sentence-corrected plain text
+        if (IsOverlayVisible && e.Ctrl && key == 0x56 && !e.Alt)
+        {
+            var pasteArgs = new PasteInterceptEventArgs();
+            PasteIntercept?.Invoke(this, pasteArgs);
+            if (pasteArgs.SuppressNativePaste)
+            {
+                e.Handled = true;
+                return;
+            }
+
+            // Let native paste run when the app did not replace clipboard / inject text
         }
 
         if (TryGetTypedCharacter(e, out var typedChar) && !e.Ctrl && !e.Alt)
@@ -145,27 +335,83 @@ public class InputService : IInputService, IDisposable
 
             if (char.IsLetterOrDigit(typedChar) || typedChar == '\'' || typedChar == '-')
             {
-                _currentWord.Append(typedChar);
-                _currentSentence.Append(typedChar);
-                var word = _currentWord.ToString();
-                TextCaptured?.Invoke(this, word);
+                lock (_bufferLock)
+                {
+                    _currentWord.Append(typedChar);
+                    _currentSentence.Append(typedChar);
+                }
+
+                TextCaptured?.Invoke(this, GetCurrentWord());
             }
             else if (char.IsWhiteSpace(typedChar))
             {
-                CompleteCurrentWord();
-                AppendSentenceSeparator(typedChar);
-                TextCaptured?.Invoke(this, _currentWord.ToString());
+                string? wordCompleted = null;
+                string textBeforeWord;
+                lock (_bufferLock)
+                {
+                    textBeforeWord = GetTextBeforeCurrentWordLocked();
+                    if (_currentWord.Length > 0)
+                    {
+                        wordCompleted = _currentWord.ToString();
+                        _currentWord.Clear();
+                    }
+
+                    AppendSentenceSeparatorLocked(typedChar);
+                }
+
+                if (wordCompleted != null)
+                {
+                    WordTyped?.Invoke(this, new WordTypedEventArgs
+                    {
+                        Word = wordCompleted,
+                        TextBeforeWord = textBeforeWord
+                    });
+                }
+
+                TextCaptured?.Invoke(this, GetCurrentWord());
             }
             else
             {
-                CompleteCurrentWord();
-                _currentSentence.Append(typedChar);
-                if (IsSentenceTerminator(typedChar))
+                string? wordCompleted = null;
+                string? sentenceCompleted = null;
+                string textBeforeWord;
+                lock (_bufferLock)
                 {
-                    CompleteCurrentSentence();
+                    textBeforeWord = GetTextBeforeCurrentWordLocked();
+                    if (_currentWord.Length > 0)
+                    {
+                        wordCompleted = _currentWord.ToString();
+                        _currentWord.Clear();
+                    }
+
+                    _currentSentence.Append(typedChar);
+                    if (IsSentenceTerminator(typedChar))
+                    {
+                        var sentence = _currentSentence.ToString().Trim();
+                        if (!string.IsNullOrWhiteSpace(sentence))
+                        {
+                            sentenceCompleted = sentence;
+                        }
+
+                        _currentSentence.Clear();
+                    }
                 }
 
-                TextCaptured?.Invoke(this, _currentWord.ToString());
+                if (wordCompleted != null)
+                {
+                    WordTyped?.Invoke(this, new WordTypedEventArgs
+                    {
+                        Word = wordCompleted,
+                        TextBeforeWord = textBeforeWord
+                    });
+                }
+
+                if (sentenceCompleted != null)
+                {
+                    SentenceTyped?.Invoke(this, sentenceCompleted);
+                }
+
+                TextCaptured?.Invoke(this, GetCurrentWord());
             }
         }
         else if (key == 0x08) // Backspace
@@ -175,16 +421,20 @@ public class InputService : IInputService, IDisposable
                 _inactivityTimer.Stop();
                 _inactivityTimer.Start();
 
-                if (_currentWord.Length > 0)
+                lock (_bufferLock)
                 {
-                    _currentWord.Length--;
+                    if (_currentWord.Length > 0)
+                    {
+                        _currentWord.Length--;
+                    }
+                    else if (_currentSentence.Length > 0)
+                    {
+                        // Also trim sentence buffer so context stays in sync
+                        _currentSentence.Length--;
+                    }
                 }
-                else if (_currentSentence.Length > 0)
-                {
-                    // Also trim sentence buffer so context stays in sync
-                    _currentSentence.Length--;
-                }
-                TextCaptured?.Invoke(this, _currentWord.ToString());
+
+                TextCaptured?.Invoke(this, GetCurrentWord());
             }
             else if (_typingInProgress)
             {
@@ -195,16 +445,56 @@ public class InputService : IInputService, IDisposable
                     _hasValidTextInput = true;
                     _inactivityTimer.Stop();
                     _inactivityTimer.Start();
-                    if (_currentWord.Length > 0) _currentWord.Length--;
-                    TextCaptured?.Invoke(this, _currentWord.ToString());
+                    lock (_bufferLock)
+                    {
+                        if (_currentWord.Length > 0)
+                        {
+                            _currentWord.Length--;
+                        }
+                    }
+
+                    TextCaptured?.Invoke(this, GetCurrentWord());
                 }
             }
         }
         else if (key == 0x0D) // Enter
         {
-            CompleteCurrentWord();
-            CompleteCurrentSentence();
-            _currentWord.Clear();
+            string? wordCompleted = null;
+            string? sentenceCompleted = null;
+            string textBeforeWord = string.Empty;
+            lock (_bufferLock)
+            {
+                textBeforeWord = GetTextBeforeCurrentWordLocked();
+                if (_currentWord.Length > 0)
+                {
+                    wordCompleted = _currentWord.ToString();
+                    _currentWord.Clear();
+                }
+
+                var sentence = _currentSentence.ToString().Trim();
+                if (!string.IsNullOrWhiteSpace(sentence))
+                {
+                    sentenceCompleted = sentence;
+                }
+
+                _currentSentence.Clear();
+                _currentWord.Clear();
+            }
+
+            if (wordCompleted != null)
+            {
+                WordTyped?.Invoke(this, new WordTypedEventArgs
+                {
+                    Word = wordCompleted,
+                    TextBeforeWord = textBeforeWord
+                });
+            }
+
+            if (sentenceCompleted != null)
+            {
+                SentenceTyped?.Invoke(this, sentenceCompleted);
+            }
+
             _typingInProgress = false;
             _hasValidTextInput = false;
             _inactivityTimer.Stop();
@@ -216,51 +506,40 @@ public class InputService : IInputService, IDisposable
     private void OnInactivityTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
     {
         _typingInProgress = false;
-        _hasValidTextInput = false;  // Reset on inactivity
+        _hasValidTextInput = false; // Reset on inactivity
         TypingStopped?.Invoke(this, EventArgs.Empty);
         _loggingService.Debug("Typing stopped after 10 seconds of inactivity");
     }
 
-    public string GetCurrentWord() => _currentWord.ToString();
+    public string GetCurrentWord()
+    {
+        lock (_bufferLock)
+        {
+            return _currentWord.ToString();
+        }
+    }
 
     public void ClearCurrentWord()
     {
-        _currentWord.Clear();
+        lock (_bufferLock)
+        {
+            _currentWord.Clear();
+        }
     }
 
     public void ResetAfterInsertion()
     {
-        _currentWord.Clear();
+        lock (_bufferLock)
+        {
+            _currentWord.Clear();
+        }
+
         // Keep sentence and session alive — user is still typing
         _inactivityTimer.Stop();
         _inactivityTimer.Start();
     }
 
-    private void CompleteCurrentWord()
-    {
-        if (_currentWord.Length == 0)
-        {
-            return;
-        }
-
-        WordTyped?.Invoke(this, _currentWord.ToString());
-        _currentWord.Clear();
-    }
-
-    private void CompleteCurrentSentence()
-    {
-        var sentence = _currentSentence.ToString().Trim();
-        if (string.IsNullOrWhiteSpace(sentence))
-        {
-            _currentSentence.Clear();
-            return;
-        }
-
-        SentenceTyped?.Invoke(this, sentence);
-        _currentSentence.Clear();
-    }
-
-    private void AppendSentenceSeparator(char typedChar)
+    private void AppendSentenceSeparatorLocked(char typedChar)
     {
         if (_currentSentence.Length == 0)
         {
@@ -273,6 +552,7 @@ public class InputService : IInputService, IDisposable
             {
                 _currentSentence.Append(' ');
             }
+
             return;
         }
 
@@ -296,6 +576,7 @@ public class InputService : IInputService, IDisposable
             {
                 typedChar = char.ToLowerInvariant(typedChar);
             }
+
             return true;
         }
 
@@ -358,4 +639,3 @@ public class InputService : IInputService, IDisposable
         _keyboardHook.Dispose();
     }
 }
-

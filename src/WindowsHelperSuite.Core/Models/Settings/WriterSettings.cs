@@ -8,4 +8,10 @@ public class WriterSettings
     public int DebounceTimeMs { get; set; } = 150;
     public bool FollowCaret { get; set; } = true;
     public string DockPosition { get; set; } = "BottomCenter";
+
+    /// <summary>Capitalize sentence starts after . ! ? and at beginning of text (insert, space, paste).</summary>
+    public bool AutoCapitalizeSentences { get; set; } = true;
+
+    /// <summary>When auto-cap is on, normalize a lone typed "i" to "I".</summary>
+    public bool CapitalizeSingleLetterI { get; set; } = true;
 }

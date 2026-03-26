@@ -80,7 +80,7 @@ public class PredictionService : IPredictionService, IDisposable
                                 CalculateContainsScore(entry, normalizedWord))));
                 }
 
-                // Phrase matches
+                // Phrase matches — always show phrases to save the most typing
                 suggestions.AddRange(
                     _store.Phrases
                         .Where(entry => PhraseMatches(entry.Text, normalizedContext, normalizedWord))
@@ -95,7 +95,10 @@ public class PredictionService : IPredictionService, IDisposable
                 // No current word typed yet, but we have context → suggest next words
                 suggestions.AddRange(GetNextWordSuggestions(lastContextWord, contextNextWords));
 
-                // If no bigrams found, fall back to frequent words + sentence starters
+                // Also show phrases that continue the context (saves the most typing)
+                suggestions.AddRange(GetContextPhraseSuggestions(normalizedContext, lastContextWord));
+
+                // If still empty, fall back to frequent words + sentence starters
                 if (suggestions.Count == 0)
                 {
                     suggestions.AddRange(GetFrequentWordSuggestions());
@@ -149,6 +152,52 @@ public class PredictionService : IPredictionService, IDisposable
             }
 
             TrackRecent(normalizedWord);
+            ScheduleSave();
+        }
+    }
+
+    public void AcceptWord(string word)
+    {
+        // Stronger learning when user explicitly picks a suggestion
+        var normalizedWord = NormalizeWord(word);
+        if (normalizedWord.Length <= 1) return;
+
+        lock (_syncRoot)
+        {
+            if (_wordIndex.TryGetValue(normalizedWord, out var existing))
+            {
+                existing.Frequency += 3; // Learn faster from explicit selection
+            }
+            else
+            {
+                var entry = new WordBankEntry { Text = normalizedWord, Frequency = 5 };
+                _store.Words.Add(entry);
+                _wordIndex[normalizedWord] = entry;
+            }
+
+            TrackRecent(normalizedWord);
+            ScheduleSave();
+        }
+    }
+
+    public void AcceptPhrase(string phrase)
+    {
+        var normalizedPhrase = NormalizePhrase(phrase);
+        if (string.IsNullOrWhiteSpace(normalizedPhrase) || !normalizedPhrase.Contains(' ')) return;
+
+        lock (_syncRoot)
+        {
+            if (_phraseIndex.TryGetValue(normalizedPhrase, out var existing))
+            {
+                existing.Frequency += 3;
+            }
+            else
+            {
+                var entry = new WordBankEntry { Text = normalizedPhrase, Frequency = 5 };
+                _store.Phrases.Add(entry);
+                _phraseIndex[normalizedPhrase] = entry;
+            }
+
             ScheduleSave();
         }
     }
@@ -407,6 +456,35 @@ public class PredictionService : IPredictionService, IDisposable
                 800 + (entry.Frequency * 5) + GetRecencyBoost(entry.Text)));
     }
 
+    private IEnumerable<SuggestionCandidate> GetContextPhraseSuggestions(string normalizedContext, string lastContextWord)
+    {
+        // Show phrases that continue from the current context — saves the most keystrokes
+        return _store.Phrases
+            .Where(entry =>
+            {
+                var phrase = entry.Text;
+                // Phrase starts with context (e.g., context="how" → "how are you")
+                if (phrase.StartsWith(normalizedContext + " ", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                // Phrase starts with last context word (e.g., lastContextWord="i" → "i would like")
+                if (phrase.StartsWith(lastContextWord + " ", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                return false;
+            })
+            .Select(entry =>
+            {
+                // Calculate how many chars this phrase saves vs typing it out
+                var charsSaved = entry.Text.Length - lastContextWord.Length;
+                var savingsBoost = charsSaved * 15; // Big boost for phrases that save more typing
+                var frequencyScore = entry.Frequency >= 5 ? entry.Frequency * 18 : entry.Frequency * 12;
+                return new SuggestionCandidate(
+                    entry.Text,
+                    entry.Text,
+                    SuggestionKind.PhraseCompletion,
+                    1800 + savingsBoost + frequencyScore + GetRecencyBoost(entry.Text));
+            });
+    }
+
     private HashSet<string> GetContextNextWords(string lastContextWord)
     {
         var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -502,7 +580,11 @@ public class PredictionService : IPredictionService, IDisposable
         var prefixBoost = entry.Text.StartsWith(combined, StringComparison.OrdinalIgnoreCase) ? 400 : 0;
         // Phrases that the user types frequently should rank higher
         var frequencyScore = entry.Frequency >= 5 ? entry.Frequency * 18 : entry.Frequency * 12;
-        return exactBoost + prefixBoost + frequencyScore;
+        // Big boost for phrases — they save the most keystrokes
+        var charsSaved = Math.Max(0, entry.Text.Length - combined.Length);
+        var savingsBoost = charsSaved * 12;
+        var recencyBoost = GetRecencyBoost(entry.Text);
+        return exactBoost + prefixBoost + frequencyScore + savingsBoost + recencyBoost;
     }
 
     private static string NormalizeWord(string input)

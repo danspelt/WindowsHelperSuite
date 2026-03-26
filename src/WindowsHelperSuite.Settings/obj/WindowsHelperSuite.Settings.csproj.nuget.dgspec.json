@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj": {}
+    "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+    "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj",
+        "projectUniqueName": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj",
         "projectName": "WindowsHelperSuite.Core",
-        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj",
+        "projectPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj",
         "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\obj\\",
+        "outputPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -63,30 +63,30 @@
         }
       }
     },
-    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj": {
+    "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj",
+        "projectUniqueName": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj",
         "projectName": "WindowsHelperSuite.Infrastructure",
-        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj",
+        "projectPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj",
         "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\obj\\",
+        "outputPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
-          "net8.0-windows"
+          "net8.0-windows10.0.19041.0"
         ],
         "sources": {
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
-          "net8.0-windows7.0": {
-            "targetAlias": "net8.0-windows",
+          "net8.0-windows10.0.19041": {
+            "targetAlias": "net8.0-windows10.0.19041.0",
             "projectReferences": {
-              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
-                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
+              "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+                "projectPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
               }
             }
           }
@@ -104,8 +104,8 @@
         }
       },
       "frameworks": {
-        "net8.0-windows7.0": {
-          "targetAlias": "net8.0-windows",
+        "net8.0-windows10.0.19041": {
+          "targetAlias": "net8.0-windows10.0.19041.0",
           "dependencies": {
             "Serilog": {
               "target": "Package",
@@ -127,8 +127,17 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.Windows.SDK.NET.Ref",
+              "version": "[10.0.19041.56, 10.0.19041.56]"
+            }
+          ],
           "frameworkReferences": {
             "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            },
+            "Microsoft.Windows.SDK.NET.Ref": {
               "privateAssets": "all"
             },
             "Microsoft.WindowsDesktop.App": {
@@ -139,33 +148,33 @@
         }
       }
     },
-    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj": {
+    "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj",
+        "projectUniqueName": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj",
         "projectName": "WindowsHelperSuite.Settings",
-        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj",
+        "projectPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\WindowsHelperSuite.Settings.csproj",
         "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\obj\\",
+        "outputPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Settings\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
         ],
         "originalTargetFrameworks": [
-          "net8.0-windows"
+          "net8.0-windows10.0.19041.0"
         ],
         "sources": {
           "https://api.nuget.org/v3/index.json": {}
         },
         "frameworks": {
-          "net8.0-windows7.0": {
-            "targetAlias": "net8.0-windows",
+          "net8.0-windows10.0.19041": {
+            "targetAlias": "net8.0-windows10.0.19041.0",
             "projectReferences": {
-              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
-                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
+              "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+                "projectPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
               },
-              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj": {
-                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj"
+              "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj": {
+                "projectPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Infrastructure\\WindowsHelperSuite.Infrastructure.csproj"
               }
             }
           }
@@ -183,8 +192,8 @@
         }
       },
       "frameworks": {
-        "net8.0-windows7.0": {
-          "targetAlias": "net8.0-windows",
+        "net8.0-windows10.0.19041": {
+          "targetAlias": "net8.0-windows10.0.19041.0",
           "imports": [
             "net461",
             "net462",
@@ -196,8 +205,17 @@
           ],
           "assetTargetFallback": true,
           "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.Windows.SDK.NET.Ref",
+              "version": "[10.0.19041.56, 10.0.19041.56]"
+            }
+          ],
           "frameworkReferences": {
             "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            },
+            "Microsoft.Windows.SDK.NET.Ref": {
               "privateAssets": "all"
             }
           },

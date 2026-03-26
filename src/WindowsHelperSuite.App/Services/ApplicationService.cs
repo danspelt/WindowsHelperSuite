@@ -1,6 +1,8 @@
 using System.Linq;
 using WindowsHelperSuite.Core.Interfaces;
 using WindowsHelperSuite.Core.Models;
+using WindowsHelperSuite.Core.Models.Settings;
+using WindowsHelperSuite.Core.Modules.Text;
 using WindowsHelperSuite.Infrastructure.Hooks;
 using WindowsHelperSuite.Infrastructure.Services;
 using WindowsHelperSuite.Hotkeys.Services;
@@ -23,8 +25,10 @@ public class ApplicationService : IDisposable
     private readonly ISpeechService _speechService;
     private readonly Queue<string> _recentWords = new();
     private readonly System.Timers.Timer _focusCheckTimer;
-    private const int MaxContextWords = 6;
+    /// <summary>Cap for phrase/word-bank context list only; prediction uses the full sentence from InputService.</summary>
+    private const int MaxPhraseContextWords = 4096;
     private int _focusLostCount = 0; // Require multiple failed checks before hiding
+    private SpeakMode _speakMode = SpeakMode.Both;
 
     public ApplicationService()
     {
@@ -37,7 +41,10 @@ public class ApplicationService : IDisposable
         _overlayService = new OverlayService(_loggingService, _settingsService);
         _inputService = new InputService(_loggingService);
         _predictionService = new PredictionService();
-        _speechService = new SpeechService();
+        _speechService = new SpeechService(() => _settingsService.Settings.Speech, _loggingService);
+
+        // Apply speech settings
+        ApplySpeechSettings();
 
         // Periodic focus check - hide overlay when no text field is focused
         _focusCheckTimer = new System.Timers.Timer(500);
@@ -71,18 +78,22 @@ public class ApplicationService : IDisposable
             catch (Exception ex) { _loggingService.Warning($"TypingStarted handler error: {ex.Message}"); }
         };
 
-        // Update suggestions as text is captured
+        // Update suggestions as text is captured + notify speech of keystroke
         _inputService.TextCaptured += (s, text) =>
-        {
-            try { UpdateSuggestions(text); }
-            catch (Exception ex) { _loggingService.Warning($"TextCaptured handler error: {ex.Message}"); }
-        };
-
-        _inputService.WordTyped += (s, word) =>
         {
             try
             {
-                OnWordTyped(word);
+                _speechService.NotifyKeystroke();
+                UpdateSuggestions(text);
+            }
+            catch (Exception ex) { _loggingService.Warning($"TextCaptured handler error: {ex.Message}"); }
+        };
+
+        _inputService.WordTyped += (s, e) =>
+        {
+            try
+            {
+                OnWordTyped(e);
 
                 // After every space, ensure the word bank opens with next-word suggestions
                 _hasValidTextInput = true;
@@ -92,6 +103,8 @@ public class ApplicationService : IDisposable
             }
             catch (Exception ex) { _loggingService.Warning($"WordTyped handler error: {ex.Message}"); }
         };
+
+        _inputService.PasteIntercept += OnPasteIntercept;
         _inputService.SentenceTyped += (s, sentence) =>
         {
             try { OnSentenceTyped(sentence); }
@@ -99,6 +112,8 @@ public class ApplicationService : IDisposable
         };
         _inputService.OverlayDismissRequested += (s, e) =>
         {
+            // Esc → instant silence + hide
+            _speechService.Stop();
             HideOverlay();
             _currentWord = string.Empty;
             _hasValidTextInput = false;
@@ -133,8 +148,9 @@ public class ApplicationService : IDisposable
                 return;
             }
 
-            // Capture state NOW before anything changes
-            var wordToInsert = suggestion.DisplayText;
+            var rawBeforePartial = _inputService.GetRawTextBeforeCurrentPartial();
+            var capOpts = WriterCapitalizationOptions.From(_settingsService.Settings.Writer);
+            var wordToInsert = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText, capOpts);
             var charsToDelete = _currentWord?.Length ?? 0;
 
             // Immediately clear so a rapid second press won't double-insert from stale list
@@ -158,15 +174,18 @@ public class ApplicationService : IDisposable
                         Thread.Sleep(30); // Let target app process deletions
                     }
                     Win32TextInjection.SendText(wordToInsert + " ");
+                    _inputService.ApplySuggestionInsertion(charsToDelete, wordToInsert + " ");
 
                     // Update context BEFORE getting new suggestions
                     LearnAcceptedSuggestion(wordToInsert);
                     _loggingService.Information($"Inserted: {wordToInsert}");
 
-                    // Speak the word if headset is connected
-                    if (_speechService.IsPreferredDeviceConnected)
+                    // Speak the word via queue (respects typing-speed gate)
+                    if (_settingsService.Settings.Speech.EnableSpeechOnSelection &&
+                        (_speakMode == SpeakMode.WordsOnly || _speakMode == SpeakMode.Both))
                     {
-                        _speechService.Speak(wordToInsert);
+                        _speechService.SpeakQueued(wordToInsert);
+                        _overlayService.ShowSpeakerIndicator(wordToInsert);
                     }
 
                     // Refresh word bank with next-word suggestions so user can chain picks
@@ -246,27 +265,31 @@ public class ApplicationService : IDisposable
         }
 
         _currentWord = text;
-        var context = GetContextText();
+        var context = _inputService.GetSuggestionContextPrefix();
         var lastContextWord = context.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
+        var fullSentence = _inputService.GetFullSentenceForOverlay();
 
         _currentSuggestions = _predictionService.GetSuggestions(context, text).ToList();
 
-        // Set context mode indicator
+        string modeSummary;
         if (!string.IsNullOrWhiteSpace(text))
         {
-            var modeText = !string.IsNullOrWhiteSpace(lastContextWord)
+            modeSummary = !string.IsNullOrWhiteSpace(lastContextWord)
                 ? $"completing \"{text}\" after \"{lastContextWord}\""
                 : $"completing \"{text}\"";
-            _overlayService.SetContextMode(modeText);
         }
         else if (!string.IsNullOrWhiteSpace(lastContextWord))
         {
-            _overlayService.SetContextMode($"next word after \"{lastContextWord}\"");
+            modeSummary = $"next word after \"{lastContextWord}\"";
         }
         else
         {
-            _overlayService.SetContextMode("sentence start");
+            modeSummary = "sentence start";
         }
+
+        _overlayService.SetContextMode(
+            modeSummary,
+            string.IsNullOrWhiteSpace(fullSentence) ? null : fullSentence);
 
         _overlayService.ShowSuggestions(_currentSuggestions);
     }
@@ -277,7 +300,9 @@ public class ApplicationService : IDisposable
         var suggestion = _currentSuggestions.FirstOrDefault(s => s.Slot == slot);
         if (suggestion != null)
         {
-            var wordToInsert = suggestion.DisplayText;
+            var rawBeforePartial = _inputService.GetRawTextBeforeCurrentPartial();
+            var capOpts = WriterCapitalizationOptions.From(_settingsService.Settings.Writer);
+            var wordToInsert = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText, capOpts);
             var charsToDelete = _currentWord?.Length ?? 0;
 
             _currentWord = string.Empty;
@@ -288,6 +313,7 @@ public class ApplicationService : IDisposable
                 Win32TextInjection.SendBackspace(charsToDelete);
             }
             Win32TextInjection.SendText(wordToInsert + " ");
+            _inputService.ApplySuggestionInsertion(charsToDelete, wordToInsert + " ");
             LearnAcceptedSuggestion(wordToInsert);
             _loggingService.Information($"Inserted: {wordToInsert}");
             UpdateSuggestions(string.Empty);
@@ -317,6 +343,7 @@ public class ApplicationService : IDisposable
 
         _hotkeyService.RegisterAction("AddToWordBank", () => AddCurrentTypingToWordBank());
         _hotkeyService.RegisterAction("AddPhraseToWordBank", () => AddCurrentPhraseToWordBank());
+        _hotkeyService.RegisterAction("FixClipboardCapitalization", FixClipboardSentenceCapitalization);
     }
 
     private void RegisterDefaultHotkeys()
@@ -333,6 +360,7 @@ public class ApplicationService : IDisposable
             _hotkeyService.RegisterHotkey("PauseWriter", "Ctrl+Shift+P");
             _hotkeyService.RegisterHotkey("AddToWordBank", "Ctrl+`");
             _hotkeyService.RegisterHotkey("AddPhraseToWordBank", "Ctrl+Shift+`");
+            _hotkeyService.RegisterHotkey("FixClipboardCapitalization", "Ctrl+Shift+C");
 
             _loggingService.Information("Registered default hotkeys");
         }
@@ -347,8 +375,29 @@ public class ApplicationService : IDisposable
 
     private string _previousWord = string.Empty;
 
-    private void OnWordTyped(string word)
+    private void OnWordTyped(WordTypedEventArgs e)
     {
+        var opts = WriterCapitalizationOptions.From(_settingsService.Settings.Writer);
+        var word = e.Word;
+        if (opts.Enabled)
+        {
+            var fixedWord = CapitalizationService.FixCompletedTypedWord(e.TextBeforeWord, e.Word, opts);
+            if (!string.Equals(fixedWord, e.Word, StringComparison.Ordinal))
+            {
+                try
+                {
+                    Win32TextInjection.SendBackspace(e.Word.Length + 1);
+                    Win32TextInjection.SendText(fixedWord + " ");
+                    _inputService.ReplaceLastCompletedWord(e.Word, fixedWord + " ");
+                    word = fixedWord;
+                }
+                catch (Exception ex)
+                {
+                    _loggingService.Warning($"Sentence capitalization fix failed: {ex.Message}");
+                }
+            }
+        }
+
         LearnWordOrPhrase(word);
 
         // Learn bigram: previous word → current word
@@ -356,9 +405,88 @@ public class ApplicationService : IDisposable
         {
             _predictionService.LearnBigram(_previousWord, word);
         }
+
         _previousWord = word.Trim().ToLowerInvariant();
 
         AppendContext(word);
+    }
+
+    private void OnPasteIntercept(object? sender, PasteInterceptEventArgs e)
+    {
+        var w = _settingsService.Settings.Writer;
+        if (!w.AutoCapitalizeSentences)
+        {
+            return;
+        }
+
+        string? inject = null;
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        {
+            try
+            {
+                var t = System.Windows.Clipboard.GetText() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(t))
+                {
+                    return;
+                }
+
+                inject = CapitalizationService.ApplySentenceCapitalization(t, WriterCapitalizationOptions.From(w));
+            }
+            catch (Exception ex)
+            {
+                _loggingService.Warning($"Paste clipboard read failed: {ex.Message}");
+            }
+        });
+
+        if (string.IsNullOrEmpty(inject))
+        {
+            return;
+        }
+
+        e.SuppressNativePaste = true;
+        try
+        {
+            Win32TextInjection.SendText(inject);
+            _inputService.AppendPastedPlainText(inject);
+            UpdateSuggestions(_inputService.GetCurrentWord());
+        }
+        catch (Exception ex)
+        {
+            _loggingService.Warning($"Paste inject failed: {ex.Message}");
+        }
+    }
+
+    private void FixClipboardSentenceCapitalization()
+    {
+        var w = _settingsService.Settings.Writer;
+        if (!w.AutoCapitalizeSentences)
+        {
+            _loggingService.Debug("FixClipboardCapitalization: AutoCapitalizeSentences is off");
+            return;
+        }
+
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        {
+            try
+            {
+                var t = System.Windows.Clipboard.GetText() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(t))
+                {
+                    return;
+                }
+
+                var n = CapitalizationService.ApplySentenceCapitalization(t, WriterCapitalizationOptions.From(w));
+                if (!string.Equals(n, t, StringComparison.Ordinal))
+                {
+                    System.Windows.Clipboard.SetText(n);
+                    _loggingService.Information("Clipboard text updated with sentence capitalization");
+                }
+            }
+            catch (Exception ex)
+            {
+                _loggingService.Warning($"FixClipboardCapitalization failed: {ex.Message}");
+            }
+        });
     }
 
     private void OnSentenceTyped(string sentence)
@@ -369,16 +497,38 @@ public class ApplicationService : IDisposable
             return;
         }
 
+        normalized = CapitalizationService.ApplySentenceCapitalization(
+            normalized,
+            WriterCapitalizationOptions.From(_settingsService.Settings.Writer));
+
         _predictionService.LearnPhrase(normalized);
+
+        // Sentence readback when mode is SentencesOnly or Both
+        if (_speakMode == SpeakMode.SentencesOnly || _speakMode == SpeakMode.Both)
+        {
+            _speechService.SpeakQueued(normalized);
+        }
+
         _recentWords.Clear();
         _previousWord = string.Empty;
     }
 
     private void LearnAcceptedSuggestion(string acceptedText)
     {
-        LearnWordOrPhrase(acceptedText);
+        var normalized = acceptedText.Trim();
+        if (string.IsNullOrWhiteSpace(normalized)) return;
 
-        var parts = acceptedText.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        // Stronger learning for explicitly selected suggestions
+        if (normalized.Contains(' '))
+        {
+            _predictionService.AcceptPhrase(normalized);
+        }
+        else
+        {
+            _predictionService.AcceptWord(normalized);
+        }
+
+        var parts = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         foreach (var part in parts)
         {
             // Learn bigrams from accepted suggestion words too
@@ -409,6 +559,22 @@ public class ApplicationService : IDisposable
         }
     }
 
+    private void ApplySpeechSettings()
+    {
+        var settings = _settingsService.Settings.Speech;
+        _speakMode = settings.SpeakMode;
+
+        // Map SpeechRate (int, e.g. -2..+2) to double (0.6..1.8)
+        var rate = 1.0 + (settings.SpeechRate * 0.2);
+        _speechService.SetRate(rate);
+
+        // Map SpeechVolume (0-100) to float (0.0-1.0)
+        _speechService.SetVolume(settings.SpeechVolume / 100f);
+
+        _loggingService.Information(
+            $"Speech: voice={_speechService.VoiceName}, rate={rate:F1}, vol={settings.SpeechVolume}, speakMode={_speakMode}, voiceMode={settings.VoiceMode}, route={_speechService.VoiceRouteStatus}");
+    }
+
     private void AppendContext(string word)
     {
         var normalized = word.Trim();
@@ -418,15 +584,10 @@ public class ApplicationService : IDisposable
         }
 
         _recentWords.Enqueue(normalized);
-        while (_recentWords.Count > MaxContextWords)
+        while (_recentWords.Count > MaxPhraseContextWords)
         {
             _recentWords.Dequeue();
         }
-    }
-
-    private string GetContextText()
-    {
-        return string.Join(' ', _recentWords);
     }
 
     private void AddCurrentTypingToWordBank()
@@ -447,15 +608,7 @@ public class ApplicationService : IDisposable
 
     private void AddCurrentPhraseToWordBank()
     {
-        var currentTyping = _inputService.GetCurrentWord();
-        var parts = _recentWords.ToList();
-
-        if (!string.IsNullOrWhiteSpace(currentTyping))
-        {
-            parts.Add(currentTyping);
-        }
-
-        var phrase = string.Join(' ', parts.Where(part => !string.IsNullOrWhiteSpace(part))).Trim();
+        var phrase = _inputService.GetFullSentenceForOverlay().Trim();
         if (string.IsNullOrWhiteSpace(phrase))
         {
             _loggingService.Information("AddPhraseToWordBank requested but there is no current phrase context");

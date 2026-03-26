@@ -14,3 +14,15 @@ C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Predicti
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Prediction\obj\Debug\net8.0\refint\WindowsHelperSuite.Prediction.dll
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Prediction\obj\Debug\net8.0\WindowsHelperSuite.Prediction.pdb
 C:\Users\Dan\Documents\GitHub\WindowsHelperSuite\src\WindowsHelperSuite.Prediction\obj\Debug\net8.0\ref\WindowsHelperSuite.Prediction.dll
+c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\artifacts\app-build\WindowsHelperSuite.Prediction.deps.json
+c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\artifacts\app-build\WindowsHelperSuite.Prediction.dll
+c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\artifacts\app-build\WindowsHelperSuite.Prediction.pdb
+c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\artifacts\cap-build\WindowsHelperSuite.Prediction.deps.json
+c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\artifacts\cap-build\WindowsHelperSuite.Prediction.dll
+c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\artifacts\cap-build\WindowsHelperSuite.Prediction.pdb
+c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\artifacts\wb-build\WindowsHelperSuite.Prediction.deps.json
+c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\artifacts\wb-build\WindowsHelperSuite.Prediction.dll
+c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\artifacts\wb-build\WindowsHelperSuite.Prediction.pdb
+c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\artifacts\cap2\WindowsHelperSuite.Prediction.deps.json
+c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\artifacts\cap2\WindowsHelperSuite.Prediction.dll
+c:\Users\Dan\Documents\GitHub\WindowsHelperSuite\artifacts\cap2\WindowsHelperSuite.Prediction.pdb

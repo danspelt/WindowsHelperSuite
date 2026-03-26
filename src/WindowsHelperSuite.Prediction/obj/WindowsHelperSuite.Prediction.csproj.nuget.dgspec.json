@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj": {}
+    "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+    "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj",
+        "projectUniqueName": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj",
         "projectName": "WindowsHelperSuite.Core",
-        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj",
+        "projectPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj",
         "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\obj\\",
+        "outputPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -63,14 +63,14 @@
         }
       }
     },
-    "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj": {
+    "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj",
+        "projectUniqueName": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj",
         "projectName": "WindowsHelperSuite.Prediction",
-        "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj",
+        "projectPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\WindowsHelperSuite.Prediction.csproj",
         "packagesPath": "C:\\Users\\Dan\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\obj\\",
+        "outputPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Prediction\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\Dan\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -85,8 +85,8 @@
           "net8.0": {
             "targetAlias": "net8.0",
             "projectReferences": {
-              "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
-                "projectPath": "C:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
+              "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj": {
+                "projectPath": "c:\\Users\\Dan\\Documents\\GitHub\\WindowsHelperSuite\\src\\WindowsHelperSuite.Core\\WindowsHelperSuite.Core.csproj"
               }
             }
           }

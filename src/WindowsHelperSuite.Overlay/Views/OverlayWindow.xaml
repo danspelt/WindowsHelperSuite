@@ -136,7 +136,9 @@
                                    FontWeight="SemiBold"
                                    Foreground="{StaticResource AccentPurple}"
                                    HorizontalAlignment="Left"
-                                   VerticalAlignment="Center"/>
+                                   VerticalAlignment="Center"
+                                   TextWrapping="Wrap"
+                                   MaxWidth="620"/>
                     </Border>
 
                     <!-- Suggestions Container -->
@@ -164,6 +166,16 @@
                                    Foreground="{StaticResource TextMuted}"
                                    VerticalAlignment="Center"
                                    Visibility="Collapsed"/>
+
+                        <!-- Speaker indicator (shown briefly when TTS plays) -->
+                        <TextBlock x:Name="SpeakerIndicator"
+                                   Grid.Column="1"
+                                   FontSize="11"
+                                   FontFamily="Segoe UI"
+                                   Foreground="{StaticResource AccentBlue}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Opacity="0"/>
 
                         <!-- Keyboard hints -->
                         <TextBlock Grid.Column="2"

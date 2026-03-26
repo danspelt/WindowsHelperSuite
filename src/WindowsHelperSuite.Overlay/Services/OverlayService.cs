@@ -106,9 +106,14 @@ public class OverlayService : IOverlayService, IDisposable
 
     public OverlayLayout GetCurrentLayout() => _layout;
 
-    public void SetContextMode(string? contextText)
+    public void SetContextMode(string? contextSummary, string? fullSentenceWords = null)
     {
-        RunOnUiThread(() => _overlayWindow?.SetContextMode(contextText));
+        RunOnUiThread(() => _overlayWindow?.SetContextMode(contextSummary, fullSentenceWords));
+    }
+
+    public void ShowSpeakerIndicator(string spokenText)
+    {
+        RunOnUiThread(() => _overlayWindow?.ShowSpeakerIndicator(spokenText));
     }
 
     public void PositionNearCaret(int x, int y)

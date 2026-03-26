@@ -178,17 +178,31 @@ public partial class OverlayWindow : Window
         ApplyLayout();
     }
 
-    public void SetContextMode(string? contextText)
+    public void SetContextMode(string? contextSummary, string? fullSentenceWords = null)
     {
-        if (string.IsNullOrWhiteSpace(contextText))
+        if (string.IsNullOrWhiteSpace(contextSummary) && string.IsNullOrWhiteSpace(fullSentenceWords))
         {
             ContextBanner.Visibility = Visibility.Collapsed;
+            ContextBanner.ToolTip = null;
+            return;
         }
-        else
+
+        var lines = new List<string>();
+        if (!string.IsNullOrWhiteSpace(contextSummary))
         {
-            ContextLabel.Text = contextText;
-            ContextBanner.Visibility = Visibility.Visible;
+            lines.Add(contextSummary.Trim());
         }
+
+        if (!string.IsNullOrWhiteSpace(fullSentenceWords))
+        {
+            lines.Add($"Sentence: {fullSentenceWords.Trim()}");
+        }
+
+        ContextLabel.Text = string.Join(Environment.NewLine, lines);
+        ContextBanner.ToolTip = string.IsNullOrWhiteSpace(fullSentenceWords)
+            ? contextSummary?.Trim()
+            : fullSentenceWords.Trim();
+        ContextBanner.Visibility = Visibility.Visible;
     }
 
     public void HideSuggestions()
@@ -296,6 +310,22 @@ public partial class OverlayWindow : Window
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Briefly show a speaker indicator with the spoken text, fades out after 800ms.
+    /// </summary>
+    public void ShowSpeakerIndicator(string spokenText)
+    {
+        var display = spokenText.Length > 20 ? spokenText[..20] + "…" : spokenText;
+        SpeakerIndicator.Text = $"\U0001F50A {display}";
+        SpeakerIndicator.Opacity = 1.0;
+
+        var fadeOut = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(800))
+        {
+            BeginTime = TimeSpan.FromMilliseconds(400)
+        };
+        SpeakerIndicator.BeginAnimation(OpacityProperty, fadeOut);
     }
 
     public void HandleNextPage()
