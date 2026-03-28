@@ -40,10 +40,9 @@ public class TrayIconService : IDisposable
     }
 
     /// <summary>Tray text is limited to 63 characters on Windows.</summary>
-    public void ApplyModeIndicator(AppMode mode)
+    public void ApplyModeIndicator(AppMode _)
     {
-        var suffix = mode == AppMode.Writer ? "Writer mode" : "Hotkey mode";
-        var text = $"Windows Helper Suite — {suffix}";
+        const string text = "Windows Helper Suite — Writer + hotkeys";
         _notifyIcon.Text = text.Length > 63 ? text[..63] : text;
     }
 

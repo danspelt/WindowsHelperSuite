@@ -149,12 +149,6 @@ public class ApplicationService : IDisposable
         // then dispatch only the text injection async to avoid hook timeout.
         _inputService.SelectionKeyPressed += (s, slot) =>
         {
-            if (_modeManager.CurrentMode != AppMode.Writer)
-            {
-                _loggingService.Debug($"Selection key {slot}: ignored (not Writer mode)");
-                return;
-            }
-
             // Cooldown: ignore auto-repeat / rapid presses that would pick from refreshed list
             var now = Environment.TickCount64;
             if (now - _lastSelectionTick < 300)
@@ -241,11 +235,6 @@ public class ApplicationService : IDisposable
 
     private void ShowOverlay()
     {
-        if (_modeManager.CurrentMode != AppMode.Writer)
-        {
-            return;
-        }
-
         _hasValidTextInput = true;
         _inputService.IsOverlayVisible = true;
         UpdateSuggestions(_currentWord);
@@ -262,11 +251,6 @@ public class ApplicationService : IDisposable
 
     private void OnFocusCheckTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
     {
-        if (_modeManager.CurrentMode != AppMode.Writer)
-        {
-            return;
-        }
-
         try
         {
             var hasCaret = Win32Caret.GetCaretPosition(out var caretX, out var caretY);
@@ -302,11 +286,6 @@ public class ApplicationService : IDisposable
         if (!_hasValidTextInput)
         {
             _loggingService.Debug("UpdateSuggestions called but no valid text input, skipping");
-            return;
-        }
-
-        if (_modeManager.CurrentMode != AppMode.Writer)
-        {
             return;
         }
 
@@ -380,54 +359,29 @@ public class ApplicationService : IDisposable
 
         _hotkeyService.RegisterAction("VolumeUp", () =>
         {
-            if (_modeManager.CurrentMode != AppMode.Hotkey)
-            {
-                return;
-            }
-
             Win32Audio.VolumeUp();
             _loggingService.Information("Volume increased");
         });
 
         _hotkeyService.RegisterAction("VolumeDown", () =>
         {
-            if (_modeManager.CurrentMode != AppMode.Hotkey)
-            {
-                return;
-            }
-
             Win32Audio.VolumeDown();
             _loggingService.Information("Volume decreased");
         });
 
         _hotkeyService.RegisterAction("VolumeMute", () =>
         {
-            if (_modeManager.CurrentMode != AppMode.Hotkey)
-            {
-                return;
-            }
-
             Win32Audio.VolumeMute();
             _loggingService.Information("Volume muted/unmuted");
         });
 
         _hotkeyService.RegisterAction("WriterRefresh", () =>
         {
-            if (_modeManager.CurrentMode != AppMode.Writer)
-            {
-                return;
-            }
-
             _loggingService.Information("Writer refresh requested");
         });
 
         _hotkeyService.RegisterAction("ToggleOverlay", () =>
         {
-            if (_modeManager.CurrentMode != AppMode.Writer)
-            {
-                return;
-            }
-
             // Only show overlay if there's a text input focused
             if (Win32Caret.GetCaretPosition(out var x, out var y) && (x != 0 || y != 0))
             {
@@ -441,42 +395,22 @@ public class ApplicationService : IDisposable
 
         _hotkeyService.RegisterAction("PauseWriter", () =>
         {
-            if (_modeManager.CurrentMode != AppMode.Writer)
-            {
-                return;
-            }
-
             _inputService.IsEnabled = !_inputService.IsEnabled;
             _loggingService.Information($"Writer {(_inputService.IsEnabled ? "enabled" : "paused")}");
         });
 
         _hotkeyService.RegisterAction("AddToWordBank", () =>
         {
-            if (_modeManager.CurrentMode != AppMode.Writer)
-            {
-                return;
-            }
-
             AddCurrentTypingToWordBank();
         });
 
         _hotkeyService.RegisterAction("AddPhraseToWordBank", () =>
         {
-            if (_modeManager.CurrentMode != AppMode.Writer)
-            {
-                return;
-            }
-
             AddCurrentPhraseToWordBank();
         });
 
         _hotkeyService.RegisterAction("FixClipboardCapitalization", () =>
         {
-            if (_modeManager.CurrentMode != AppMode.Writer)
-            {
-                return;
-            }
-
             FixClipboardSentenceCapitalization();
         });
     }
@@ -559,11 +493,6 @@ public class ApplicationService : IDisposable
 
     private void OnPasteIntercept(object? sender, PasteInterceptEventArgs e)
     {
-        if (_modeManager.CurrentMode != AppMode.Writer)
-        {
-            return;
-        }
-
         var w = _settingsService.Settings.Writer;
         if (!w.AutoCapitalizeSentences)
         {
@@ -775,22 +704,10 @@ public class ApplicationService : IDisposable
         _loggingService.Information($"Added phrase to word bank: {phrase}");
     }
 
-    private void ApplyApplicationMode(AppMode mode)
+    private void ApplyApplicationMode(AppMode _)
     {
-        if (mode == AppMode.Writer)
-        {
-            _inputService.IsEnabled = true;
-            return;
-        }
-
-        _focusCheckTimer.Stop();
-        _speechService.Stop();
-        HideOverlay();
-        _inputService.IsOverlayVisible = false;
-        _hasValidTextInput = false;
-        _currentWord = string.Empty;
-        _currentSuggestions = [];
-        _inputService.IsEnabled = false;
+        // Writer assistance and global hotkeys (volume, word bank, etc.) stay on together.
+        _inputService.IsEnabled = true;
     }
 
     private void OpenModeMenu()

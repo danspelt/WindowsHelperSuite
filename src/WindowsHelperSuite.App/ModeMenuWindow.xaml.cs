@@ -30,7 +30,7 @@ public partial class ModeMenuWindow : Window, IModeMenuKeySink
         _onModeFeedback = onModeFeedback;
 
         var current = ModeDefinition.For(_modeManager.CurrentMode);
-        CurrentModeText.Text = $"Current: {current.DisplayName}";
+        CurrentModeText.Text = $"All features on · saved preference: {current.DisplayName}";
 
         OptionsList.Items.Add("1  Writer Mode");
         OptionsList.Items.Add("2  Hotkey Mode");
@@ -224,8 +224,7 @@ public partial class ModeMenuWindow : Window, IModeMenuKeySink
             return;
         }
 
-        var label = ModeDefinition.For(mode).DisplayName + " Active";
-        _onModeFeedback(label);
+        _onModeFeedback($"Preference: {ModeDefinition.For(mode).DisplayName}");
     }
 
     private static class Native
