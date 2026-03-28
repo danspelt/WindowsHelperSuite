@@ -10,7 +10,8 @@ public class KeyboardHookService : IDisposable
 {
     private IntPtr _hookId = IntPtr.Zero;
     private Win32KeyboardHook.LowLevelKeyboardProc? _hookCallback;
-    private readonly Dictionary<string, (uint keyCode, bool ctrl, bool alt, bool shift)> _registeredHotkeys = [];
+    private readonly Dictionary<string, (uint keyCode, bool ctrl, bool alt, bool shift, bool consumeKeys)> _registeredHotkeys = [];
+    private long _lastOpenModeMenuTick;
     private readonly HashSet<uint> _pressedKeys = [];
     private readonly HashSet<uint> _suppressedKeys = []; // Track keys whose key-UP should also be eaten
     private readonly ILoggingService _loggingService;
@@ -40,10 +41,10 @@ public class KeyboardHookService : IDisposable
         }
     }
 
-    public void RegisterHotkey(string actionName, string gesture)
+    public void RegisterHotkey(string actionName, string gesture, bool consumeMatchingKeys = false)
     {
-        var parsed = ParseGesture(gesture);
-        _registeredHotkeys[actionName] = parsed;
+        var (keyCode, ctrl, alt, shift) = ParseGesture(gesture);
+        _registeredHotkeys[actionName] = (keyCode, ctrl, alt, shift, consumeMatchingKeys);
     }
 
     public void UnregisterHotkey(string actionName)
@@ -88,7 +89,11 @@ public class KeyboardHookService : IDisposable
                 if (isKeyDown)
                 {
                     _pressedKeys.Add(vkCode);
-                    CheckHotkeys();
+                    if (CheckHotkeys())
+                    {
+                        _suppressedKeys.Add(vkCode);
+                        return (IntPtr)1;
+                    }
 
                     var ctrlPressed = _pressedKeys.Contains(0x11) || _pressedKeys.Contains(0xA2) || _pressedKeys.Contains(0xA3);
                     var altPressed = _pressedKeys.Contains(0x12) || _pressedKeys.Contains(0xA4) || _pressedKeys.Contains(0xA5);
@@ -123,22 +128,45 @@ public class KeyboardHookService : IDisposable
         return Win32KeyboardHook.CallNextHookEx(_hookId, nCode, wParam, lParam);
     }
 
-    private void CheckHotkeys()
+    /// <summary>Returns true if the key event should be swallowed (consumeMatchingKeys hotkeys).</summary>
+    private bool CheckHotkeys()
     {
-        foreach (var (actionName, (keyCode, ctrl, alt, shift)) in _registeredHotkeys)
+        var suppress = false;
+        foreach (var (actionName, (keyCode, ctrl, alt, shift, eat)) in _registeredHotkeys)
         {
-            if (_pressedKeys.Contains(keyCode))
+            if (!_pressedKeys.Contains(keyCode))
             {
-                var ctrlPressed = _pressedKeys.Contains(0x11) || _pressedKeys.Contains(0xA2) || _pressedKeys.Contains(0xA3);
-                var altPressed = _pressedKeys.Contains(0x12) || _pressedKeys.Contains(0xA4) || _pressedKeys.Contains(0xA5);
-                var shiftPressed = _pressedKeys.Contains(0x10) || _pressedKeys.Contains(0xA0) || _pressedKeys.Contains(0xA1);
+                continue;
+            }
 
-                if (ctrl == ctrlPressed && alt == altPressed && shift == shiftPressed)
+            var ctrlPressed = _pressedKeys.Contains(0x11) || _pressedKeys.Contains(0xA2) || _pressedKeys.Contains(0xA3);
+            var altPressed = _pressedKeys.Contains(0x12) || _pressedKeys.Contains(0xA4) || _pressedKeys.Contains(0xA5);
+            var shiftPressed = _pressedKeys.Contains(0x10) || _pressedKeys.Contains(0xA0) || _pressedKeys.Contains(0xA1);
+
+            if (ctrl != ctrlPressed || alt != altPressed || shift != shiftPressed)
+            {
+                continue;
+            }
+
+            if (string.Equals(actionName, "OpenModeMenu", StringComparison.Ordinal))
+            {
+                var now = Environment.TickCount64;
+                if (now - _lastOpenModeMenuTick < 500)
                 {
-                    HotkeyPressed?.Invoke(this, actionName);
+                    continue;
                 }
+
+                _lastOpenModeMenuTick = now;
+            }
+
+            HotkeyPressed?.Invoke(this, actionName);
+            if (eat)
+            {
+                suppress = true;
             }
         }
+
+        return suppress;
     }
 
     private static (uint keyCode, bool ctrl, bool alt, bool shift) ParseGesture(string gesture)
@@ -194,7 +222,7 @@ public class KeyboardHookService : IDisposable
             "F10" => 0x79,
             "F11" => 0x7A,
             "F12" => 0x7B,
-            "VOLUMEUP" => 0xAE,
+            "VOLUMEUP" => 0xAF,
             "VOLUMEDOWN" => 0xAE,
             "VOLUMEMUTE" => 0xAD,
             "`" => 0xC0,

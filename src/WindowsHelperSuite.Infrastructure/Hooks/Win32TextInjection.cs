@@ -95,15 +95,21 @@ public static class Win32TextInjection
                         // Send Ctrl+V
                         Thread.Sleep(20);
                         SendCtrlV();
-                        Thread.Sleep(40);
 
-                        // Restore clipboard
-                        try
+                        // Restore clipboard after a delay so the target app has
+                        // time to process the paste before the content changes back.
+                        if (saved != null)
                         {
-                            if (saved != null)
-                                Clipboard.SetText(saved, TextDataFormat.UnicodeText);
+                            var capturedSaved = saved;
+                            var staThread = new Thread(() =>
+                            {
+                                Thread.Sleep(500);
+                                try { Clipboard.SetText(capturedSaved, TextDataFormat.UnicodeText); } catch { }
+                            });
+                            staThread.SetApartmentState(ApartmentState.STA);
+                            staThread.IsBackground = true;
+                            staThread.Start();
                         }
-                        catch { }
 
                         return true;
                     }

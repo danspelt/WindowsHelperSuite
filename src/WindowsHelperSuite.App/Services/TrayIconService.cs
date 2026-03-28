@@ -1,7 +1,7 @@
-using System.IO;
 using System.Windows;
 using System.Windows.Forms;
 using WindowsHelperSuite.Core.Interfaces;
+using WindowsHelperSuite.Core.Modes;
 
 namespace WindowsHelperSuite.App.Services;
 
@@ -37,6 +37,19 @@ public class TrayIconService : IDisposable
 
         _notifyIcon.ContextMenuStrip = contextMenu;
         _notifyIcon.DoubleClick += OnSettingsClick;
+    }
+
+    /// <summary>Tray text is limited to 63 characters on Windows.</summary>
+    public void ApplyModeIndicator(AppMode mode)
+    {
+        var suffix = mode == AppMode.Writer ? "Writer mode" : "Hotkey mode";
+        var text = $"Windows Helper Suite — {suffix}";
+        _notifyIcon.Text = text.Length > 63 ? text[..63] : text;
+    }
+
+    public void ShowSettings()
+    {
+        OnSettingsClick(this, EventArgs.Empty);
     }
 
     private void OnSettingsClick(object? sender, EventArgs e)

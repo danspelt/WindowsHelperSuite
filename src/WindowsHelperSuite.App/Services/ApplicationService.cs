@@ -2,7 +2,9 @@ using System.Linq;
 using WindowsHelperSuite.Core.Interfaces;
 using WindowsHelperSuite.Core.Models;
 using WindowsHelperSuite.Core.Models.Settings;
+using WindowsHelperSuite.Core.Modes;
 using WindowsHelperSuite.Core.Modules.Text;
+using WindowsHelperSuite.Infrastructure.Audio;
 using WindowsHelperSuite.Infrastructure.Hooks;
 using WindowsHelperSuite.Infrastructure.Services;
 using WindowsHelperSuite.Hotkeys.Services;
@@ -23,6 +25,7 @@ public class ApplicationService : IDisposable
     private readonly InputService _inputService;
     private readonly IPredictionService _predictionService;
     private readonly ISpeechService _speechService;
+    private readonly IModeManager _modeManager;
     private readonly Queue<string> _recentWords = new();
     private readonly System.Timers.Timer _focusCheckTimer;
     /// <summary>Cap for phrase/word-bank context list only; prediction uses the full sentence from InputService.</summary>
@@ -50,6 +53,11 @@ public class ApplicationService : IDisposable
         _focusCheckTimer = new System.Timers.Timer(500);
         _focusCheckTimer.Elapsed += OnFocusCheckTimerElapsed;
         _focusCheckTimer.AutoReset = true;
+
+        _modeManager = new ModeManager(_settingsService, _loggingService, ApplyApplicationMode);
+        _modeManager.Initialize();
+        _trayIconService.ApplyModeIndicator(_modeManager.CurrentMode);
+        _modeManager.ModeChanged += (_, mode) => _trayIconService.ApplyModeIndicator(mode);
 
         // Wire up suggestion selection to text injection
         _overlayService.SuggestionSelected += OnSuggestionSelected;
@@ -141,12 +149,28 @@ public class ApplicationService : IDisposable
         // then dispatch only the text injection async to avoid hook timeout.
         _inputService.SelectionKeyPressed += (s, slot) =>
         {
+            if (_modeManager.CurrentMode != AppMode.Writer)
+            {
+                _loggingService.Debug($"Selection key {slot}: ignored (not Writer mode)");
+                return;
+            }
+
+            // Cooldown: ignore auto-repeat / rapid presses that would pick from refreshed list
+            var now = Environment.TickCount64;
+            if (now - _lastSelectionTick < 300)
+            {
+                _loggingService.Debug($"Selection key {slot}: ignored (cooldown)");
+                return;
+            }
+
             var suggestion = _currentSuggestions.FirstOrDefault(x => x.Slot == slot);
             if (suggestion == null)
             {
                 _loggingService.Debug($"Selection key {slot}: no suggestion found");
                 return;
             }
+
+            _lastSelectionTick = now;
 
             var rawBeforePartial = _inputService.GetRawTextBeforeCurrentPartial();
             var capOpts = WriterCapitalizationOptions.From(_settingsService.Settings.Writer);
@@ -158,7 +182,7 @@ public class ApplicationService : IDisposable
             _currentSuggestions = [];
             _inputService.ResetAfterInsertion();
 
-            _loggingService.Debug($"Selection key {slot}: inserting \"{wordToInsert}\", deleting {charsToDelete} chars");
+            _loggingService.Debug($"Selection key {slot}: suggestion='{suggestion.DisplayText}', wordToInsert='{wordToInsert}', charsToDelete={charsToDelete}");
 
             // Visual feedback — flash the selected button green
             _overlayService.FlashSelection(slot);
@@ -166,6 +190,8 @@ public class ApplicationService : IDisposable
             // Inject text on the UI thread (STA + message pump = clipboard works)
             System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
             {
+                // Suppress hook processing so injected keystrokes don't double-update the sentence buffer
+                _inputService.BeginInjection();
                 try
                 {
                     if (charsToDelete > 0)
@@ -196,6 +222,10 @@ public class ApplicationService : IDisposable
                 {
                     _loggingService.Warning($"Text injection failed for \"{wordToInsert}\": {ex.Message}");
                 }
+                finally
+                {
+                    _inputService.EndInjection();
+                }
             });
         };
 
@@ -207,9 +237,15 @@ public class ApplicationService : IDisposable
     private string _currentWord = string.Empty;
     private List<SuggestionItem> _currentSuggestions = [];
     private bool _hasValidTextInput = false;
+    private long _lastSelectionTick;
 
     private void ShowOverlay()
     {
+        if (_modeManager.CurrentMode != AppMode.Writer)
+        {
+            return;
+        }
+
         _hasValidTextInput = true;
         _inputService.IsOverlayVisible = true;
         UpdateSuggestions(_currentWord);
@@ -226,6 +262,11 @@ public class ApplicationService : IDisposable
 
     private void OnFocusCheckTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
     {
+        if (_modeManager.CurrentMode != AppMode.Writer)
+        {
+            return;
+        }
+
         try
         {
             var hasCaret = Win32Caret.GetCaretPosition(out var caretX, out var caretY);
@@ -261,6 +302,11 @@ public class ApplicationService : IDisposable
         if (!_hasValidTextInput)
         {
             _loggingService.Debug("UpdateSuggestions called but no valid text input, skipping");
+            return;
+        }
+
+        if (_modeManager.CurrentMode != AppMode.Writer)
+        {
             return;
         }
 
@@ -308,22 +354,80 @@ public class ApplicationService : IDisposable
             _currentWord = string.Empty;
             _inputService.ClearCurrentWord();
 
-            if (charsToDelete > 0)
+            _inputService.BeginInjection();
+            try
             {
-                Win32TextInjection.SendBackspace(charsToDelete);
+                if (charsToDelete > 0)
+                {
+                    Win32TextInjection.SendBackspace(charsToDelete);
+                }
+                Win32TextInjection.SendText(wordToInsert + " ");
+                _inputService.ApplySuggestionInsertion(charsToDelete, wordToInsert + " ");
+                LearnAcceptedSuggestion(wordToInsert);
+                _loggingService.Information($"Inserted: {wordToInsert}");
+                UpdateSuggestions(string.Empty);
             }
-            Win32TextInjection.SendText(wordToInsert + " ");
-            _inputService.ApplySuggestionInsertion(charsToDelete, wordToInsert + " ");
-            LearnAcceptedSuggestion(wordToInsert);
-            _loggingService.Information($"Inserted: {wordToInsert}");
-            UpdateSuggestions(string.Empty);
+            finally
+            {
+                _inputService.EndInjection();
+            }
         }
     }
 
     private void RegisterHotkeyActions()
     {
+        _hotkeyService.RegisterAction("OpenModeMenu", OpenModeMenu);
+
+        _hotkeyService.RegisterAction("VolumeUp", () =>
+        {
+            if (_modeManager.CurrentMode != AppMode.Hotkey)
+            {
+                return;
+            }
+
+            Win32Audio.VolumeUp();
+            _loggingService.Information("Volume increased");
+        });
+
+        _hotkeyService.RegisterAction("VolumeDown", () =>
+        {
+            if (_modeManager.CurrentMode != AppMode.Hotkey)
+            {
+                return;
+            }
+
+            Win32Audio.VolumeDown();
+            _loggingService.Information("Volume decreased");
+        });
+
+        _hotkeyService.RegisterAction("VolumeMute", () =>
+        {
+            if (_modeManager.CurrentMode != AppMode.Hotkey)
+            {
+                return;
+            }
+
+            Win32Audio.VolumeMute();
+            _loggingService.Information("Volume muted/unmuted");
+        });
+
+        _hotkeyService.RegisterAction("WriterRefresh", () =>
+        {
+            if (_modeManager.CurrentMode != AppMode.Writer)
+            {
+                return;
+            }
+
+            _loggingService.Information("Writer refresh requested");
+        });
+
         _hotkeyService.RegisterAction("ToggleOverlay", () =>
         {
+            if (_modeManager.CurrentMode != AppMode.Writer)
+            {
+                return;
+            }
+
             // Only show overlay if there's a text input focused
             if (Win32Caret.GetCaretPosition(out var x, out var y) && (x != 0 || y != 0))
             {
@@ -337,18 +441,52 @@ public class ApplicationService : IDisposable
 
         _hotkeyService.RegisterAction("PauseWriter", () =>
         {
+            if (_modeManager.CurrentMode != AppMode.Writer)
+            {
+                return;
+            }
+
             _inputService.IsEnabled = !_inputService.IsEnabled;
             _loggingService.Information($"Writer {(_inputService.IsEnabled ? "enabled" : "paused")}");
         });
 
-        _hotkeyService.RegisterAction("AddToWordBank", () => AddCurrentTypingToWordBank());
-        _hotkeyService.RegisterAction("AddPhraseToWordBank", () => AddCurrentPhraseToWordBank());
-        _hotkeyService.RegisterAction("FixClipboardCapitalization", FixClipboardSentenceCapitalization);
+        _hotkeyService.RegisterAction("AddToWordBank", () =>
+        {
+            if (_modeManager.CurrentMode != AppMode.Writer)
+            {
+                return;
+            }
+
+            AddCurrentTypingToWordBank();
+        });
+
+        _hotkeyService.RegisterAction("AddPhraseToWordBank", () =>
+        {
+            if (_modeManager.CurrentMode != AppMode.Writer)
+            {
+                return;
+            }
+
+            AddCurrentPhraseToWordBank();
+        });
+
+        _hotkeyService.RegisterAction("FixClipboardCapitalization", () =>
+        {
+            if (_modeManager.CurrentMode != AppMode.Writer)
+            {
+                return;
+            }
+
+            FixClipboardSentenceCapitalization();
+        });
     }
 
     private void RegisterDefaultHotkeys()
     {
         var settings = _settingsService.Settings.Hotkeys.Bindings;
+        var menuGesture = string.IsNullOrWhiteSpace(_settingsService.Settings.ModeSystem.MenuHotkeyGesture)
+            ? "Ctrl+F3"
+            : _settingsService.Settings.ModeSystem.MenuHotkeyGesture.Trim();
 
         if (settings.Count == 0)
         {
@@ -371,6 +509,9 @@ public class ApplicationService : IDisposable
                 _hotkeyService.RegisterHotkey(binding.ActionName, binding.Gesture);
             }
         }
+
+        _hotkeyService.RegisterHotkey("OpenModeMenu", menuGesture, consumeMatchingKeys: true);
+        _loggingService.Information($"Mode menu hotkey registered: {menuGesture}");
     }
 
     private string _previousWord = string.Empty;
@@ -384,6 +525,7 @@ public class ApplicationService : IDisposable
             var fixedWord = CapitalizationService.FixCompletedTypedWord(e.TextBeforeWord, e.Word, opts);
             if (!string.Equals(fixedWord, e.Word, StringComparison.Ordinal))
             {
+                _inputService.BeginInjection();
                 try
                 {
                     Win32TextInjection.SendBackspace(e.Word.Length + 1);
@@ -394,6 +536,10 @@ public class ApplicationService : IDisposable
                 catch (Exception ex)
                 {
                     _loggingService.Warning($"Sentence capitalization fix failed: {ex.Message}");
+                }
+                finally
+                {
+                    _inputService.EndInjection();
                 }
             }
         }
@@ -413,6 +559,11 @@ public class ApplicationService : IDisposable
 
     private void OnPasteIntercept(object? sender, PasteInterceptEventArgs e)
     {
+        if (_modeManager.CurrentMode != AppMode.Writer)
+        {
+            return;
+        }
+
         var w = _settingsService.Settings.Writer;
         if (!w.AutoCapitalizeSentences)
         {
@@ -444,6 +595,7 @@ public class ApplicationService : IDisposable
         }
 
         e.SuppressNativePaste = true;
+        _inputService.BeginInjection();
         try
         {
             Win32TextInjection.SendText(inject);
@@ -453,6 +605,10 @@ public class ApplicationService : IDisposable
         catch (Exception ex)
         {
             _loggingService.Warning($"Paste inject failed: {ex.Message}");
+        }
+        finally
+        {
+            _inputService.EndInjection();
         }
     }
 
@@ -617,6 +773,70 @@ public class ApplicationService : IDisposable
 
         _predictionService.LearnPhrase(phrase);
         _loggingService.Information($"Added phrase to word bank: {phrase}");
+    }
+
+    private void ApplyApplicationMode(AppMode mode)
+    {
+        if (mode == AppMode.Writer)
+        {
+            _inputService.IsEnabled = true;
+            return;
+        }
+
+        _focusCheckTimer.Stop();
+        _speechService.Stop();
+        HideOverlay();
+        _inputService.IsOverlayVisible = false;
+        _hasValidTextInput = false;
+        _currentWord = string.Empty;
+        _currentSuggestions = [];
+        _inputService.IsEnabled = false;
+    }
+
+    private void OpenModeMenu()
+    {
+        _loggingService.Information("Mode menu opened (global shortcut)");
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher == null)
+        {
+            return;
+        }
+
+        // Let digits, Esc, etc. reach the WPF menu instead of overlay / writer handlers.
+        _inputService.SuspendWriterKeyHandling = true;
+        dispatcher.BeginInvoke(() =>
+        {
+            ModeMenuWindow? menu = null;
+            try
+            {
+                menu = new ModeMenuWindow(_modeManager, _trayIconService.ShowSettings, _loggingService, ShowModeFeedback);
+                _inputService.ModeMenuKeySink = menu;
+                menu.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                _loggingService.Warning($"Mode menu error: {ex.Message}");
+            }
+            finally
+            {
+                _inputService.ModeMenuKeySink = null;
+                _inputService.SuspendWriterKeyHandling = false;
+            }
+        }, System.Windows.Threading.DispatcherPriority.Send);
+    }
+
+    private void ShowModeFeedback(string headline)
+    {
+        var ms = _settingsService.Settings.ModeSystem;
+        if (ms.ShowModeToast)
+        {
+            ModeToastWindow.ShowBrief(headline);
+        }
+
+        if (ms.SpeakModeChange)
+        {
+            _speechService.Speak(headline);
+        }
     }
 
     public void Dispose()

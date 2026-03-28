@@ -17,8 +17,22 @@ public class InputService : IInputService, IDisposable
     private readonly System.Timers.Timer _inactivityTimer;
     private bool _typingInProgress;
     private bool _hasValidTextInput;
+    private volatile bool _suppressHookProcessing;
+    /// <summary>When true, the hook does not handle keys so modal UI (e.g. mode menu) receives them.</summary>
+    private volatile bool _suspendWriterKeyHandling;
 
     public bool IsEnabled { get; set; } = true;
+
+    /// <summary>Set while the global mode menu (or similar) is shown so overlay selection keys and Esc are not swallowed.</summary>
+    public bool SuspendWriterKeyHandling
+    {
+        get => _suspendWriterKeyHandling;
+        set => _suspendWriterKeyHandling = value;
+    }
+
+    /// <summary>While the mode menu is open, keys are routed here so arrows work even if another HWND has focus.</summary>
+    public IModeMenuKeySink? ModeMenuKeySink { get; set; }
+
     public bool IsOverlayVisible { get; set; } = false;
 
     public event EventHandler<string>? TextCaptured;
@@ -221,7 +235,18 @@ public class InputService : IInputService, IDisposable
 
     private void OnKeyPressed(object? sender, KeyEventArgs e)
     {
-        if (!IsEnabled)
+        if (_suspendWriterKeyHandling)
+        {
+            // Focus often stays in the previous app; WM_KEYDOWN never reaches the WPF menu. Handle here.
+            if (ModeMenuKeySink != null && ModeMenuKeySink.TryConsumeKey(e.KeyCode, e.Ctrl, e.Shift, e.Alt))
+            {
+                e.Handled = true;
+            }
+
+            return;
+        }
+
+        if (!IsEnabled || _suppressHookProcessing)
         {
             return;
         }
@@ -234,6 +259,7 @@ public class InputService : IInputService, IDisposable
             // Handle selection keys 1-9 — suppress FIRST, then fire event
             if (key >= 0x31 && key <= 0x39) // 1-9
             {
+                _loggingService.Debug($"Selection key detected: {key - 0x30}, IsOverlayVisible={IsOverlayVisible}");
                 e.Handled = true;
                 SelectionKeyPressed?.Invoke(this, (int)(key - 0x30));
                 return;
@@ -283,6 +309,10 @@ public class InputService : IInputService, IDisposable
 
                 return;
             }
+        }
+        else if (key >= 0x30 && key <= 0x39) // Number keys but overlay not visible
+        {
+            _loggingService.Debug($"Number key {key - 0x30} ignored - overlay not visible");
         }
 
         // Paste while overlay visible — app may replace with sentence-corrected plain text
@@ -538,6 +568,13 @@ public class InputService : IInputService, IDisposable
         _inactivityTimer.Stop();
         _inactivityTimer.Start();
     }
+
+    /// <summary>
+    /// Suppress hook buffer processing while programmatic keystrokes (backspace + paste) are in flight.
+    /// Prevents the hook from double-counting characters that ApplySuggestionInsertion will handle.
+    /// </summary>
+    public void BeginInjection() => _suppressHookProcessing = true;
+    public void EndInjection() => _suppressHookProcessing = false;
 
     private void AppendSentenceSeparatorLocked(char typedChar)
     {

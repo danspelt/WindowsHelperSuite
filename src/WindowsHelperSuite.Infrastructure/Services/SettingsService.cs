@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using WindowsHelperSuite.Core.Interfaces;
 using WindowsHelperSuite.Core.Models.Settings;
 
@@ -23,7 +24,8 @@ public class SettingsService : ISettingsService
         _jsonOptions = new JsonSerializerOptions
         {
             WriteIndented = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
         };
 
         Directory.CreateDirectory(_appDataPath);

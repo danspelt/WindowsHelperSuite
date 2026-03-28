@@ -34,10 +34,10 @@ public class HotkeyService : IHotkeyService, IDisposable
         _loggingService.Information("Hotkey service stopped");
     }
 
-    public void RegisterHotkey(string actionName, string gesture)
+    public void RegisterHotkey(string actionName, string gesture, bool consumeMatchingKeys = false)
     {
-        _keyboardHook.RegisterHotkey(actionName, gesture);
-        _loggingService.Information($"Registered hotkey: {actionName} = {gesture}");
+        _keyboardHook.RegisterHotkey(actionName, gesture, consumeMatchingKeys);
+        _loggingService.Information($"Registered hotkey: {actionName} = {gesture}" + (consumeMatchingKeys ? " (consume keys)" : ""));
     }
 
     public void UnregisterHotkey(string actionName)
