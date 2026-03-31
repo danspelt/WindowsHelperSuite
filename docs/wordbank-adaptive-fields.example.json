@@ -1,0 +1,28 @@
+{
+  "Words": [],
+  "Phrases": [],
+  "Bigrams": [],
+  "Corrections": [
+    {
+      "Typo": "teh",
+      "Fix": "the",
+      "Count": 2
+    }
+  ],
+  "PhrasePrefixes": [
+    {
+      "Prefix": "how",
+      "Phrases": [
+        "how are you",
+        "how is it going"
+      ]
+    },
+    {
+      "Prefix": "thank",
+      "Phrases": [
+        "thank you",
+        "thank you very much"
+      ]
+    }
+  ]
+}

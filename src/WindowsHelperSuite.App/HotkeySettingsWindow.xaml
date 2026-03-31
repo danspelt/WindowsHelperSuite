@@ -1,0 +1,369 @@
+<Window x:Class="WindowsHelperSuite.App.HotkeySettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Settings — Windows Helper Suite"
+        Width="660" Height="680"
+        MinWidth="540" MinHeight="460"
+        Background="#0F0F1A"
+        Foreground="White"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResizeWithGrip"
+        FontFamily="Segoe UI"
+        PreviewKeyDown="Window_PreviewKeyDown">
+
+    <Window.Resources>
+        <Style x:Key="ColHeader" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#55558A"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style x:Key="ActionBtn" TargetType="Button">
+            <Setter Property="Background" Value="#252542"/>
+            <Setter Property="Foreground" Value="#9090C0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#363660"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1C1C38"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#44445A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryBtn" TargetType="Button" BasedOn="{StaticResource ActionBtn}">
+            <Setter Property="Background" Value="#3A3A9E"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#4A4AB8"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#2A2A80"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ClearBtn" TargetType="Button" BasedOn="{StaticResource ActionBtn}">
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Foreground" Value="#664466"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#CC66AA"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel LastChildFill="True">
+
+        <!-- Header -->
+        <Border DockPanel.Dock="Top" Background="#13131F" Padding="22,18,22,16">
+            <TextBlock Text="Settings" FontSize="20" FontWeight="Bold" Foreground="White"/>
+        </Border>
+
+        <!-- Footer -->
+        <Border DockPanel.Dock="Bottom" Background="#13131F" Padding="16,12">
+            <Grid>
+                <Button x:Name="ResetBtn" HorizontalAlignment="Left"
+                        Content="↺  Reset to Defaults"
+                        Style="{StaticResource ActionBtn}"
+                        Click="ResetBtn_Click"/>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button x:Name="CancelBtn" Content="Cancel"
+                            Style="{StaticResource ActionBtn}"
+                            Margin="0,0,8,0"
+                            Click="CancelBtn_Click"/>
+                    <Button x:Name="SaveBtn" Content="Save Changes"
+                            Style="{StaticResource PrimaryBtn}"
+                            Click="SaveBtn_Click"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Tab control -->
+        <TabControl x:Name="MainTabs" Background="#0F0F1A" BorderThickness="0"
+                    SelectionChanged="MainTabs_SelectionChanged">
+            <TabControl.Resources>
+                <Style TargetType="TabItem">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="Foreground" Value="#66668A"/>
+                    <Setter Property="FontSize" Value="13"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                    <Setter Property="Padding" Value="18,10"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TabItem">
+                                <Border x:Name="TabBd" Background="Transparent"
+                                        BorderThickness="0,0,0,2"
+                                        BorderBrush="Transparent"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter ContentSource="Header"
+                                                      HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="TabBd" Property="BorderBrush" Value="#5555CC"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Foreground" Value="#AAAACC"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </TabControl.Resources>
+
+            <!-- ═══════════ HOTKEYS TAB ═══════════ -->
+            <TabItem Header="⌨  Hotkeys">
+                <DockPanel Background="#0F0F1A">
+                    <Border DockPanel.Dock="Top" Background="#0C0C18" Padding="20,5,20,5">
+                        <TextBlock FontSize="11" Foreground="#44446A" Padding="0,4">
+                            Click CHANGE, then press your desired key combo. Press Esc to cancel.
+                        </TextBlock>
+                    </Border>
+                    <Border DockPanel.Dock="Top" Background="#0C0C18" Padding="20,6,20,6">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="30"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="170"/>
+                                <ColumnDefinition Width="72"/>
+                                <ColumnDefinition Width="36"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="1" Text="ACTION" Style="{StaticResource ColHeader}"/>
+                            <TextBlock Grid.Column="2" Text="BINDING" Style="{StaticResource ColHeader}"/>
+                        </Grid>
+                    </Border>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  Background="#0F0F1A">
+                        <StackPanel x:Name="RowsPanel" Margin="8,6,8,12"/>
+                    </ScrollViewer>
+                </DockPanel>
+            </TabItem>
+
+            <!-- ═══════════ APPEARANCE TAB ═══════════ -->
+            <TabItem Header="🎨  Appearance">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                              Background="#0F0F1A">
+                    <StackPanel Margin="20,16,20,20">
+
+                        <!-- ── Text & Size section ── -->
+                        <TextBlock Text="TEXT &amp; SIZE" Style="{StaticResource ColHeader}" Margin="0,0,0,10"/>
+
+                        <!-- Font Size -->
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="46"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Font Size" FontSize="14" Foreground="#D8D8F0"/>
+                                    <TextBlock Text="Overlay suggestion text" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <Slider x:Name="FontSizeSlider" Grid.Column="1"
+                                        Minimum="8" Maximum="36" TickFrequency="1" IsSnapToTickEnabled="True"
+                                        Margin="12,0,8,0" VerticalAlignment="Center"
+                                        ValueChanged="FontSizeSlider_ValueChanged"/>
+                                <Border Grid.Column="2" Background="#12122A" CornerRadius="6" Padding="6,4">
+                                    <TextBlock x:Name="FontSizeLabel" Text="14"
+                                               FontSize="13" FontFamily="Consolas"
+                                               Foreground="#88BBFF" HorizontalAlignment="Center"/>
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <!-- Opacity -->
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="46"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Opacity" FontSize="14" Foreground="#D8D8F0"/>
+                                    <TextBlock Text="Overlay transparency" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <Slider x:Name="OpacitySlider" Grid.Column="1"
+                                        Minimum="25" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True"
+                                        Margin="12,0,8,0" VerticalAlignment="Center"
+                                        ValueChanged="OpacitySlider_ValueChanged"/>
+                                <Border Grid.Column="2" Background="#12122A" CornerRadius="6" Padding="6,4">
+                                    <TextBlock x:Name="OpacityLabel" Text="100%"
+                                               FontSize="12" FontFamily="Consolas"
+                                               Foreground="#88BBFF" HorizontalAlignment="Center"/>
+                                </Border>
+                            </Grid>
+                        </Border>
+
+                        <!-- Large Text Mode -->
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Large Text Mode" FontSize="14" Foreground="#D8D8F0"/>
+                                    <TextBlock Text="Boosts font size by 50% for accessibility" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <CheckBox x:Name="LargeTextCheck" Grid.Column="1"
+                                          VerticalAlignment="Center" Margin="12,0,0,0"
+                                          Foreground="#88BBFF"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Layout -->
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,20">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Overlay Layout" FontSize="14" Foreground="#D8D8F0"/>
+                                    <TextBlock Text="Horizontal shows suggestions side-by-side" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                                    <RadioButton x:Name="LayoutVertical" Content="Vertical"
+                                                 Foreground="#9090C0" FontSize="13" Margin="0,0,12,0"
+                                                 GroupName="Layout"/>
+                                    <RadioButton x:Name="LayoutHorizontal" Content="Horizontal"
+                                                 Foreground="#9090C0" FontSize="13"
+                                                 GroupName="Layout"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <!-- ── Colors section ── -->
+                        <TextBlock Text="COLORS" Style="{StaticResource ColHeader}" Margin="0,0,0,10"/>
+
+                        <!-- Accent Color -->
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,14" Margin="0,0,0,6">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="Accent Color" FontSize="14" Foreground="#D8D8F0"/>
+                                        <TextBlock Text="Stripe, badges, and highlights" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Border x:Name="AccentPreview" Width="32" Height="24" CornerRadius="5" Margin="0,0,8,0"/>
+                                        <TextBox x:Name="AccentHex" Width="88" Background="#12122A"
+                                                 Foreground="#88BBFF" BorderThickness="0"
+                                                 FontFamily="Consolas" FontSize="13" Padding="6,4"
+                                                 VerticalContentAlignment="Center"
+                                                 TextChanged="AccentHex_TextChanged"/>
+                                    </StackPanel>
+                                </Grid>
+                                <WrapPanel x:Name="AccentSwatches"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Background Color -->
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,14" Margin="0,0,0,6">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="Background Color" FontSize="14" Foreground="#D8D8F0"/>
+                                        <TextBlock Text="Overlay panel background" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Border x:Name="BgPreview" Width="32" Height="24" CornerRadius="5" Margin="0,0,8,0"/>
+                                        <TextBox x:Name="BgHex" Width="88" Background="#12122A"
+                                                 Foreground="#88BBFF" BorderThickness="0"
+                                                 FontFamily="Consolas" FontSize="13" Padding="6,4"
+                                                 VerticalContentAlignment="Center"
+                                                 TextChanged="BgHex_TextChanged"/>
+                                    </StackPanel>
+                                </Grid>
+                                <WrapPanel x:Name="BgSwatches"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Card Color -->
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,14" Margin="0,0,0,6">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="Card Color" FontSize="14" Foreground="#D8D8F0"/>
+                                        <TextBlock Text="Suggestion button background" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Border x:Name="CardPreview" Width="32" Height="24" CornerRadius="5" Margin="0,0,8,0"/>
+                                        <TextBox x:Name="CardHex" Width="88" Background="#12122A"
+                                                 Foreground="#88BBFF" BorderThickness="0"
+                                                 FontFamily="Consolas" FontSize="13" Padding="6,4"
+                                                 VerticalContentAlignment="Center"
+                                                 TextChanged="CardHex_TextChanged"/>
+                                    </StackPanel>
+                                </Grid>
+                                <WrapPanel x:Name="CardSwatches"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Text Color -->
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,14" Margin="0,0,0,6">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="Text Color" FontSize="14" Foreground="#D8D8F0"/>
+                                        <TextBlock Text="Suggestion label text" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Border x:Name="TextPreview" Width="32" Height="24" CornerRadius="5" Margin="0,0,8,0"/>
+                                        <TextBox x:Name="TextHex" Width="88" Background="#12122A"
+                                                 Foreground="#88BBFF" BorderThickness="0"
+                                                 FontFamily="Consolas" FontSize="13" Padding="6,4"
+                                                 VerticalContentAlignment="Center"
+                                                 TextChanged="TextHex_TextChanged"/>
+                                    </StackPanel>
+                                </Grid>
+                                <WrapPanel x:Name="TextSwatches"/>
+                            </StackPanel>
+                        </Border>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+        </TabControl>
+
+    </DockPanel>
+</Window>

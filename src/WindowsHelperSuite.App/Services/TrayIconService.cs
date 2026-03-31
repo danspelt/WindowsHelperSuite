@@ -9,11 +9,15 @@ public class TrayIconService : IDisposable
 {
     private readonly NotifyIcon _notifyIcon;
     private readonly ILoggingService _loggingService;
+    private readonly ISettingsService _settingsService;
+    private readonly Action _reloadHotkeys;
     private Window? _settingsWindow;
 
-    public TrayIconService(ILoggingService loggingService)
+    public TrayIconService(ILoggingService loggingService, ISettingsService settingsService, Action reloadHotkeys)
     {
         _loggingService = loggingService;
+        _settingsService = settingsService;
+        _reloadHotkeys = reloadHotkeys;
         _notifyIcon = new NotifyIcon
         {
             Icon = SystemIcons.Application,
@@ -53,18 +57,20 @@ public class TrayIconService : IDisposable
 
     private void OnSettingsClick(object? sender, EventArgs e)
     {
-        _loggingService.Information("Opening settings window");
+        _loggingService.Information("Opening hotkey settings window");
 
-        if (_settingsWindow == null || !_settingsWindow.IsVisible)
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
         {
-            _settingsWindow = new MainWindow();
-            _settingsWindow.Closed += (s, e) => _settingsWindow = null;
+            if (_settingsWindow != null && _settingsWindow.IsVisible)
+            {
+                _settingsWindow.Activate();
+                return;
+            }
+
+            _settingsWindow = new HotkeySettingsWindow(_settingsService, _reloadHotkeys);
+            _settingsWindow.Closed += (s, _) => _settingsWindow = null;
             _settingsWindow.Show();
-        }
-        else
-        {
-            _settingsWindow.Activate();
-        }
+        });
     }
 
     private void OnExitClick(object? sender, EventArgs e)

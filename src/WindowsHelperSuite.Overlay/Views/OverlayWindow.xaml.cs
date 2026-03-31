@@ -236,18 +236,40 @@ public partial class OverlayWindow : Window
 
         stackPanel.Children.Add(badgeBorder);
 
-        // Suggestion text — clear, readable
+        var textPanel = new StackPanel
+        {
+            Orientation = Orientation.Vertical,
+            VerticalAlignment = VerticalAlignment.Center,
+            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 220 : 320
+        };
+
         var textBlock = new TextBlock
         {
             Text = suggestion.DisplayText,
             FontSize = 17,
             FontFamily = new FontFamily("Segoe UI"),
-            FontWeight = FontWeights.Normal,
+            FontWeight = FontWeights.SemiBold,
             Foreground = (Brush)FindResource("TextPrimary"),
-            VerticalAlignment = VerticalAlignment.Center
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 220 : 320
         };
 
-        stackPanel.Children.Add(textBlock);
+        textPanel.Children.Add(textBlock);
+
+        var kindLabel = new TextBlock
+        {
+            Text = GetSuggestionKindLabel(suggestion.Kind),
+            FontSize = 11,
+            FontFamily = new FontFamily("Segoe UI"),
+            FontWeight = FontWeights.SemiBold,
+            Foreground = (Brush)FindResource("TextSecondary"),
+            Margin = new Thickness(0, 3, 0, 0),
+            TextWrapping = TextWrapping.NoWrap
+        };
+
+        textPanel.Children.Add(kindLabel);
+        stackPanel.Children.Add(textPanel);
 
         var button = new Button
         {
@@ -255,6 +277,7 @@ public partial class OverlayWindow : Window
             Tag = suggestion.Slot,
             Style = (Style)FindResource("SuggestionButtonStyle"),
             Opacity = 0,
+            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 280 : 420,
             Margin = _currentLayout == OverlayLayout.Horizontal
                 ? new Thickness(3, 0, 3, 0)
                 : new Thickness(0, 3, 0, 3)
@@ -425,20 +448,75 @@ public partial class OverlayWindow : Window
         Top = top;
     }
 
-    public void ApplyUiSettings(int fontSize, double opacity, bool largeTextMode)
+    public void ApplyUiSettings(int fontSize, double opacity, bool largeTextMode,
+        string accentColor = "#4ADE80", string bgColor = "#0F0F14",
+        string cardColor = "#1E1F2A", string textColor = "#F0F0F5")
     {
         var baseFontSize = largeTextMode ? Math.Max(fontSize * 1.5, 20) : Math.Max(fontSize, 16);
+        Opacity = Math.Clamp(opacity, 0.35, 1.0);
+
+        ApplyColorResource("AccentGreen", accentColor);
+        ApplyColorResource("AccentStripe", accentColor);
+        ApplyColorResource("AccentGreenDim", DimColor(accentColor, 0.35));
+        ApplyColorResource("PrimaryBackground", bgColor);
+        ApplyColorResource("CardBackground", cardColor);
+        ApplyColorResource("SecondaryBackground", cardColor);
+        ApplyColorResource("TextPrimary", textColor);
 
         foreach (var child in SuggestionsContainer.Children.OfType<Button>())
         {
             child.FontSize = baseFontSize;
             var stackPanel = child.Content as StackPanel;
-            if (stackPanel?.Children[1] is TextBlock textBlock)
+            if (stackPanel?.Children.Count > 1 && stackPanel.Children[1] is StackPanel textPanel)
             {
-                textBlock.FontSize = baseFontSize;
+                if (textPanel.Children.Count > 0 && textPanel.Children[0] is TextBlock textBlock)
+                {
+                    textBlock.FontSize = baseFontSize;
+                }
+
+                if (textPanel.Children.Count > 1 && textPanel.Children[1] is TextBlock detailText)
+                {
+                    detailText.FontSize = Math.Max(baseFontSize - 5, 11);
+                }
             }
-            child.MinHeight = largeTextMode ? 52 : 44;
+
+            child.MinHeight = largeTextMode ? 64 : 48;
         }
+
+        ContextLabel.FontSize = Math.Max(baseFontSize - 4, 12);
+        PagingIndicator.FontSize = Math.Max(baseFontSize - 6, 11);
+        SpeakerIndicator.FontSize = Math.Max(baseFontSize - 6, 11);
+    }
+
+    private void ApplyColorResource(string key, string hex)
+    {
+        try
+        {
+            var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
+            Resources[key] = new System.Windows.Media.SolidColorBrush(color);
+        }
+        catch { }
+    }
+
+    private static string DimColor(string hex, double alpha)
+    {
+        try
+        {
+            var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
+            return $"#{(byte)(color.R * alpha):X2}{(byte)(color.G * alpha):X2}{(byte)(color.B * alpha):X2}";
+        }
+        catch { return hex; }
+    }
+
+    private static string GetSuggestionKindLabel(SuggestionKind kind)
+    {
+        return kind switch
+        {
+            SuggestionKind.PhraseCompletion => "Phrase",
+            SuggestionKind.NextWord => "Next word",
+            SuggestionKind.UserHistory => "From history",
+            _ => "Word"
+        };
     }
 
     private void AnimateOverlayRefresh()

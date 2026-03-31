@@ -22,7 +22,7 @@ public sealed class SpeechService : ISpeechService, IDisposable
     private float _volume = 1.0f;
     private volatile string _voiceRouteStatus = "Idle";
 
-    private readonly ConcurrentQueue<string> _queue = new();
+    private readonly ConcurrentQueue<QueuedSpeechItem> _queue = new();
     private volatile bool _isSpeaking;
 
     private readonly object _speakCtsLock = new();
@@ -99,7 +99,8 @@ public sealed class SpeechService : ISpeechService, IDisposable
 
     public async void Speak(string text)
     {
-        if (string.IsNullOrWhiteSpace(text) || _disposed)
+        var normalizedText = NormalizeSpokenText(text);
+        if (string.IsNullOrWhiteSpace(normalizedText) || _disposed)
         {
             return;
         }
@@ -115,7 +116,7 @@ public sealed class SpeechService : ISpeechService, IDisposable
 
         try
         {
-            await RouteSpeakAsync(text, token).ConfigureAwait(false);
+            await RouteSpeakAsync(normalizedText, token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -127,9 +128,10 @@ public sealed class SpeechService : ISpeechService, IDisposable
         }
     }
 
-    public void SpeakQueued(string text)
+    public void SpeakQueued(string text, bool ignoreTypingCooldown = false)
     {
-        if (string.IsNullOrWhiteSpace(text) || _disposed)
+        var normalizedText = NormalizeSpokenText(text);
+        if (string.IsNullOrWhiteSpace(normalizedText) || _disposed)
         {
             return;
         }
@@ -139,14 +141,14 @@ public sealed class SpeechService : ISpeechService, IDisposable
             return;
         }
 
-        if (IsTypingCooldownActive())
+        if (!ignoreTypingCooldown && IsTypingCooldownActive())
         {
             return;
         }
 
         while (_queue.TryDequeue(out _)) { }
 
-        _queue.Enqueue(text);
+        _queue.Enqueue(new QueuedSpeechItem(normalizedText, ignoreTypingCooldown));
         ProcessQueue();
     }
 
@@ -200,14 +202,14 @@ public sealed class SpeechService : ISpeechService, IDisposable
             return;
         }
 
-        while (_queue.TryDequeue(out var text))
+        while (_queue.TryDequeue(out var item))
         {
             if (_disposed || !MaySpeak(_getSettings()))
             {
                 break;
             }
 
-            if (IsTypingCooldownActive())
+            if (!item.IgnoreTypingCooldown && IsTypingCooldownActive())
             {
                 break;
             }
@@ -217,7 +219,7 @@ public sealed class SpeechService : ISpeechService, IDisposable
             {
                 CancelActiveSynthesis();
                 var token = BeginNewUtterance();
-                await RouteSpeakAsync(text, token).ConfigureAwait(false);
+                await RouteSpeakAsync(item.Text, token).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -300,6 +302,17 @@ public sealed class SpeechService : ISpeechService, IDisposable
         return Math.Clamp(v, -10, 10);
     }
 
+    private static string NormalizeSpokenText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        return string.Join(' ', text
+            .Split([' ', '\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -320,4 +333,6 @@ public sealed class SpeechService : ISpeechService, IDisposable
 
         _windows.Dispose();
     }
+
+    private sealed record QueuedSpeechItem(string Text, bool IgnoreTypingCooldown);
 }

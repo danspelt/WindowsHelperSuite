@@ -41,9 +41,9 @@
 
         <!-- Suggestion button style — modern card, large targets, high contrast -->
         <Style x:Key="SuggestionButtonStyle" TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource CardBackground}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource BorderSubtle}"/>
+            <Setter Property="Background" Value="{DynamicResource CardBackground}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="12,10,16,10"/>
             <Setter Property="MinWidth" Value="72"/>
@@ -74,7 +74,7 @@
 
         <!-- Number badge — pill shape, bold -->
         <Style x:Key="SlotBadgeStyle" TargetType="Border">
-            <Setter Property="Background" Value="{StaticResource AccentGreen}"/>
+            <Setter Property="Background" Value="{DynamicResource AccentGreen}"/>
             <Setter Property="CornerRadius" Value="7"/>
             <Setter Property="Padding" Value="7,2"/>
             <Setter Property="Margin" Value="0,0,10,0"/>
@@ -99,8 +99,8 @@
         <Grid>
             <!-- Main overlay border -->
             <Border x:Name="OverlayBorder"
-                    Background="{StaticResource PrimaryBackground}"
-                    BorderBrush="{StaticResource BorderColor}"
+                    Background="{DynamicResource PrimaryBackground}"
+                    BorderBrush="{DynamicResource BorderColor}"
                     BorderThickness="1"
                     CornerRadius="14"
                     Padding="16,12,16,12"
@@ -116,7 +116,7 @@
 
                     <!-- Accent stripe at top -->
                     <Border Grid.Row="0"
-                            Background="{StaticResource AccentStripe}"
+                            Background="{DynamicResource AccentStripe}"
                             Height="3"
                             CornerRadius="2"
                             Margin="0,0,0,12"
@@ -125,7 +125,7 @@
                     <!-- Context mode indicator -->
                     <Border x:Name="ContextBanner"
                             Grid.Row="1"
-                            Background="{StaticResource ContextBackground}"
+                            Background="{DynamicResource ContextBackground}"
                             CornerRadius="8"
                             Padding="10,6"
                             Margin="0,0,0,12"
@@ -134,7 +134,7 @@
                                    FontSize="12"
                                    FontFamily="Segoe UI"
                                    FontWeight="SemiBold"
-                                   Foreground="{StaticResource AccentPurple}"
+                                   Foreground="{DynamicResource AccentPurple}"
                                    HorizontalAlignment="Left"
                                    VerticalAlignment="Center"
                                    TextWrapping="Wrap"
@@ -172,7 +172,7 @@
                                    Grid.Column="1"
                                    FontSize="11"
                                    FontFamily="Segoe UI"
-                                   Foreground="{StaticResource AccentBlue}"
+                                   Foreground="{DynamicResource AccentBlue}"
                                    HorizontalAlignment="Center"
                                    VerticalAlignment="Center"
                                    Opacity="0"/>

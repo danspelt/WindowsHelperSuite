@@ -26,10 +26,7 @@ public class OverlayService : IOverlayService, IDisposable
         _loggingService = loggingService;
         _settingsService = settingsService;
 
-        // Load layout preference from settings
-        _layout = OverlayLayout.Vertical;
-        _settingsService.Settings.Ui.Layout = OverlayLayout.Vertical;
-        _settingsService.Save();
+        _layout = _settingsService.Settings.Ui.Layout;
     }
 
     public void ShowSuggestions(IReadOnlyList<SuggestionItem> suggestions)
@@ -60,6 +57,7 @@ public class OverlayService : IOverlayService, IDisposable
         {
             _currentPage++;
             ShowCurrentPage();
+            PositionAtCaret();
             _loggingService.Information($"Moved to page {_currentPage + 1} of {_totalPages}");
         }
     }
@@ -70,6 +68,7 @@ public class OverlayService : IOverlayService, IDisposable
         {
             _currentPage--;
             ShowCurrentPage();
+            PositionAtCaret();
             _loggingService.Information($"Moved to page {_currentPage + 1} of {_totalPages}");
         }
     }
@@ -173,7 +172,19 @@ public class OverlayService : IOverlayService, IDisposable
             })
             .ToList();
 
-        RunOnUiThread(() => _overlayWindow?.ShowSuggestions(_currentPageSuggestions, _currentPage, _totalPages));
+        RunOnUiThread(() =>
+        {
+            if (_overlayWindow == null)
+            {
+                return;
+            }
+
+            var ui = _settingsService.Settings.Ui;
+            _overlayWindow.SetLayout(_layout);
+            _overlayWindow.ApplyUiSettings(ui.FontSize, ui.Opacity, ui.LargeTextMode,
+                ui.AccentColor, ui.OverlayBackgroundColor, ui.CardColor, ui.TextColor);
+            _overlayWindow.ShowSuggestions(_currentPageSuggestions, _currentPage, _totalPages);
+        });
         _loggingService.Debug($"Showing {_currentPageSuggestions.Count} suggestions (page {_currentPage + 1})");
     }
 
@@ -189,6 +200,10 @@ public class OverlayService : IOverlayService, IDisposable
                 }
 
                 _overlayWindow = new OverlayWindow();
+                var ui = _settingsService.Settings.Ui;
+                _overlayWindow.SetLayout(_layout);
+                _overlayWindow.ApplyUiSettings(ui.FontSize, ui.Opacity, ui.LargeTextMode,
+                    ui.AccentColor, ui.OverlayBackgroundColor, ui.CardColor, ui.TextColor);
                 _overlayWindow.SuggestionSelected += OnSuggestionSelected;
                 _overlayWindow.NextPageRequested += (s, e) => MoveToNextPage();
                 _overlayWindow.PreviousPageRequested += (s, e) => MoveToPreviousPage();

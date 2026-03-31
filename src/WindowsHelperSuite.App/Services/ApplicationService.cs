@@ -1,4 +1,5 @@
 using System.Linq;
+using WindowsHelperSuite.App.Services.Writer;
 using WindowsHelperSuite.Core.Interfaces;
 using WindowsHelperSuite.Core.Models;
 using WindowsHelperSuite.Core.Models.Settings;
@@ -24,6 +25,9 @@ public class ApplicationService : IDisposable
     private readonly OverlayService _overlayService;
     private readonly InputService _inputService;
     private readonly IPredictionService _predictionService;
+    private readonly IWriterContext _writerContext;
+    private readonly ILearningEngine _learningEngine;
+    private readonly ITypingModel _typingModel;
     private readonly ISpeechService _speechService;
     private readonly IModeManager _modeManager;
     private readonly Queue<string> _recentWords = new();
@@ -33,17 +37,23 @@ public class ApplicationService : IDisposable
     private int _focusLostCount = 0; // Require multiple failed checks before hiding
     private SpeakMode _speakMode = SpeakMode.Both;
 
-    public ApplicationService()
+    public ApplicationService(
+        IWriterContext? writerContext = null,
+        ILearningEngine? learningEngine = null,
+        ITypingModel? typingModel = null)
     {
         _loggingService = new LoggingService();
         _settingsService = new SettingsService();
         _settingsService.Load();
 
-        _trayIconService = new TrayIconService(_loggingService);
+        _trayIconService = new TrayIconService(_loggingService, _settingsService, ReloadHotkeys);
         _hotkeyService = new HotkeyService(_loggingService);
         _overlayService = new OverlayService(_loggingService, _settingsService);
-        _inputService = new InputService(_loggingService);
-        _predictionService = new PredictionService();
+        _inputService = new InputService(_loggingService, new CachingSecretFieldDetector(new SecretFieldDetector()));
+        _typingModel = typingModel ?? new TypingModelService();
+        _predictionService = new PredictionService(_typingModel);
+        _writerContext = writerContext ?? new CachingWriterContext(new ForegroundWriterContext());
+        _learningEngine = learningEngine ?? new DefaultLearningEngine();
         _speechService = new SpeechService(() => _settingsService.Settings.Speech, _loggingService);
 
         // Apply speech settings
@@ -58,6 +68,8 @@ public class ApplicationService : IDisposable
         _modeManager.Initialize();
         _trayIconService.ApplyModeIndicator(_modeManager.CurrentMode);
         _modeManager.ModeChanged += (_, mode) => _trayIconService.ApplyModeIndicator(mode);
+
+        _inputService.SecretFieldProtectionChanged += OnSecretFieldProtectionChanged;
 
         // Wire up suggestion selection to text injection
         _overlayService.SuggestionSelected += OnSuggestionSelected;
@@ -168,15 +180,17 @@ public class ApplicationService : IDisposable
 
             var rawBeforePartial = _inputService.GetRawTextBeforeCurrentPartial();
             var capOpts = WriterCapitalizationOptions.From(_settingsService.Settings.Writer);
-            var wordToInsert = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText, capOpts);
+            var acceptedText = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText, capOpts);
+            var textToInsert = ResolveSuggestionInsertText(suggestion, acceptedText);
             var charsToDelete = _currentWord?.Length ?? 0;
+            var typedPartial = _currentWord ?? string.Empty;
 
             // Immediately clear so a rapid second press won't double-insert from stale list
             _currentWord = string.Empty;
             _currentSuggestions = [];
             _inputService.ResetAfterInsertion();
 
-            _loggingService.Debug($"Selection key {slot}: suggestion='{suggestion.DisplayText}', wordToInsert='{wordToInsert}', charsToDelete={charsToDelete}");
+            _loggingService.Debug($"Selection key {slot}: suggestion='{suggestion.DisplayText}', acceptedText='{acceptedText}', textToInsert='{textToInsert}', charsToDelete={charsToDelete}");
 
             // Visual feedback — flash the selected button green
             _overlayService.FlashSelection(slot);
@@ -193,19 +207,19 @@ public class ApplicationService : IDisposable
                         Win32TextInjection.SendBackspace(charsToDelete);
                         Thread.Sleep(30); // Let target app process deletions
                     }
-                    Win32TextInjection.SendText(wordToInsert + " ");
-                    _inputService.ApplySuggestionInsertion(charsToDelete, wordToInsert + " ");
+                    Win32TextInjection.SendText(textToInsert + " ");
+                    _inputService.ApplySuggestionInsertion(charsToDelete, textToInsert + " ");
 
                     // Update context BEFORE getting new suggestions
-                    LearnAcceptedSuggestion(wordToInsert);
-                    _loggingService.Information($"Inserted: {wordToInsert}");
+                    LearnAcceptedSuggestion(acceptedText, typedPartial, suggestion.Kind, charsToDelete);
+                    _loggingService.Information($"Inserted: {acceptedText}");
 
                     // Speak the word via queue (respects typing-speed gate)
                     if (_settingsService.Settings.Speech.EnableSpeechOnSelection &&
                         (_speakMode == SpeakMode.WordsOnly || _speakMode == SpeakMode.Both))
                     {
-                        _speechService.SpeakQueued(wordToInsert);
-                        _overlayService.ShowSpeakerIndicator(wordToInsert);
+                        _speechService.SpeakQueued(acceptedText, true);
+                        _overlayService.ShowSpeakerIndicator(acceptedText);
                     }
 
                     // Refresh word bank with next-word suggestions so user can chain picks
@@ -214,7 +228,7 @@ public class ApplicationService : IDisposable
                 }
                 catch (Exception ex)
                 {
-                    _loggingService.Warning($"Text injection failed for \"{wordToInsert}\": {ex.Message}");
+                    _loggingService.Warning($"Text injection failed for \"{acceptedText}\": {ex.Message}");
                 }
                 finally
                 {
@@ -235,6 +249,11 @@ public class ApplicationService : IDisposable
 
     private void ShowOverlay()
     {
+        if (_inputService.IsInProtectedField)
+        {
+            return;
+        }
+
         _hasValidTextInput = true;
         _inputService.IsOverlayVisible = true;
         UpdateSuggestions(_currentWord);
@@ -247,6 +266,30 @@ public class ApplicationService : IDisposable
         _focusCheckTimer.Stop();
         _overlayService.HideSuggestions();
         _inputService.IsOverlayVisible = false;
+    }
+
+    private void OnSecretFieldProtectionChanged(object? sender, bool isProtected)
+    {
+        if (isProtected)
+        {
+            _speechService.Stop();
+            HideOverlay();
+            _currentWord = string.Empty;
+            _currentSuggestions = [];
+            _previousWord = string.Empty;
+            _recentWords.Clear();
+            _hasValidTextInput = false;
+            _loggingService.Debug("Writer suppressed: protected field (no overlay, no learning, no speech)");
+        }
+        else
+        {
+            _previousWord = string.Empty;
+            _recentWords.Clear();
+            _currentWord = string.Empty;
+            _currentSuggestions = [];
+            _hasValidTextInput = false;
+            _loggingService.Debug("Writer: left protected field — fresh prediction state");
+        }
     }
 
     private void OnFocusCheckTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
@@ -282,6 +325,11 @@ public class ApplicationService : IDisposable
 
     private void UpdateSuggestions(string text)
     {
+        if (_inputService.IsInProtectedField)
+        {
+            return;
+        }
+
         // Only show overlay if we have valid text input
         if (!_hasValidTextInput)
         {
@@ -294,22 +342,22 @@ public class ApplicationService : IDisposable
         var lastContextWord = context.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
         var fullSentence = _inputService.GetFullSentenceForOverlay();
 
-        _currentSuggestions = _predictionService.GetSuggestions(context, text).ToList();
+        _currentSuggestions = _predictionService.GetSuggestions(context, text, _writerContext.GetSnapshot()).ToList();
 
         string modeSummary;
         if (!string.IsNullOrWhiteSpace(text))
         {
             modeSummary = !string.IsNullOrWhiteSpace(lastContextWord)
-                ? $"completing \"{text}\" after \"{lastContextWord}\""
-                : $"completing \"{text}\"";
+                ? $"Completing \"{text}\" after \"{lastContextWord}\""
+                : $"Completing \"{text}\"";
         }
         else if (!string.IsNullOrWhiteSpace(lastContextWord))
         {
-            modeSummary = $"next word after \"{lastContextWord}\"";
+            modeSummary = $"Next idea after \"{lastContextWord}\"";
         }
         else
         {
-            modeSummary = "sentence start";
+            modeSummary = "Sentence starter";
         }
 
         _overlayService.SetContextMode(
@@ -327,8 +375,10 @@ public class ApplicationService : IDisposable
         {
             var rawBeforePartial = _inputService.GetRawTextBeforeCurrentPartial();
             var capOpts = WriterCapitalizationOptions.From(_settingsService.Settings.Writer);
-            var wordToInsert = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText, capOpts);
+            var acceptedText = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText, capOpts);
+            var textToInsert = ResolveSuggestionInsertText(suggestion, acceptedText);
             var charsToDelete = _currentWord?.Length ?? 0;
+            var typedPartial = _currentWord ?? string.Empty;
 
             _currentWord = string.Empty;
             _inputService.ClearCurrentWord();
@@ -340,10 +390,10 @@ public class ApplicationService : IDisposable
                 {
                     Win32TextInjection.SendBackspace(charsToDelete);
                 }
-                Win32TextInjection.SendText(wordToInsert + " ");
-                _inputService.ApplySuggestionInsertion(charsToDelete, wordToInsert + " ");
-                LearnAcceptedSuggestion(wordToInsert);
-                _loggingService.Information($"Inserted: {wordToInsert}");
+                Win32TextInjection.SendText(textToInsert + " ");
+                _inputService.ApplySuggestionInsertion(charsToDelete, textToInsert + " ");
+                LearnAcceptedSuggestion(acceptedText, typedPartial, suggestion.Kind, charsToDelete);
+                _loggingService.Information($"Inserted: {acceptedText}");
                 UpdateSuggestions(string.Empty);
             }
             finally
@@ -448,6 +498,24 @@ public class ApplicationService : IDisposable
         _loggingService.Information($"Mode menu hotkey registered: {menuGesture}");
     }
 
+    private static readonly string[] AllHotkeyActionNames =
+    [
+        "VolumeUp", "VolumeDown", "VolumeMute", "WriterRefresh",
+        "ToggleOverlay", "PauseWriter", "AddToWordBank", "AddPhraseToWordBank",
+        "FixClipboardCapitalization", "OpenModeMenu",
+    ];
+
+    private void ReloadHotkeys()
+    {
+        foreach (var name in AllHotkeyActionNames)
+        {
+            _hotkeyService.UnregisterHotkey(name);
+        }
+
+        RegisterDefaultHotkeys();
+        _loggingService.Information("Hotkeys reloaded from settings");
+    }
+
     private string _previousWord = string.Empty;
 
     private void OnWordTyped(WordTypedEventArgs e)
@@ -462,9 +530,9 @@ public class ApplicationService : IDisposable
                 _inputService.BeginInjection();
                 try
                 {
-                    Win32TextInjection.SendBackspace(e.Word.Length + 1);
-                    Win32TextInjection.SendText(fixedWord + " ");
-                    _inputService.ReplaceLastCompletedWord(e.Word, fixedWord + " ");
+                    Win32TextInjection.SendBackspace(e.Word.Length);
+                    Win32TextInjection.SendText(fixedWord);
+                    _inputService.ReplaceLastCompletedWord(e.Word, fixedWord);
                     word = fixedWord;
                 }
                 catch (Exception ex)
@@ -486,9 +554,45 @@ public class ApplicationService : IDisposable
             _predictionService.LearnBigram(_previousWord, word);
         }
 
+        _learningEngine.OnWordCommitted(word, e.TextBeforeWord, _writerContext.GetSnapshot());
+
+        if (!_inputService.IsInProtectedField)
+        {
+            _typingModel.RecordWord(word, _writerContext.GetSnapshot());
+        }
+
         _previousWord = word.Trim().ToLowerInvariant();
 
+        if (_settingsService.Settings.Speech.EnableSpeechOnSelection &&
+            (_speakMode == SpeakMode.WordsOnly || _speakMode == SpeakMode.Both))
+        {
+            _speechService.SpeakQueued(word, true);
+            _overlayService.ShowSpeakerIndicator(word);
+        }
+
         AppendContext(word);
+    }
+
+    private static string ResolveSuggestionInsertText(SuggestionItem suggestion, string acceptedText)
+    {
+        if (suggestion.Kind != SuggestionKind.PhraseCompletion || string.IsNullOrWhiteSpace(suggestion.InsertText))
+        {
+            return acceptedText;
+        }
+
+        var remainder = suggestion.InsertText.TrimStart();
+        if (string.IsNullOrWhiteSpace(remainder))
+        {
+            return acceptedText;
+        }
+
+        var startIndex = suggestion.DisplayText.IndexOf(remainder, StringComparison.OrdinalIgnoreCase);
+        if (startIndex >= 0 && startIndex < acceptedText.Length)
+        {
+            return acceptedText[startIndex..].TrimStart();
+        }
+
+        return remainder;
     }
 
     private void OnPasteIntercept(object? sender, PasteInterceptEventArgs e)
@@ -588,20 +692,34 @@ public class ApplicationService : IDisposable
 
         _predictionService.LearnPhrase(normalized);
 
+        _learningEngine.OnSentenceCompleted(normalized, _writerContext.GetSnapshot());
+
+        if (!_inputService.IsInProtectedField)
+        {
+            _typingModel.RecordPhrase(normalized, _writerContext.GetSnapshot());
+        }
+
         // Sentence readback when mode is SentencesOnly or Both
         if (_speakMode == SpeakMode.SentencesOnly || _speakMode == SpeakMode.Both)
         {
-            _speechService.SpeakQueued(normalized);
+            _speechService.SpeakQueued(normalized, true);
         }
 
         _recentWords.Clear();
         _previousWord = string.Empty;
     }
 
-    private void LearnAcceptedSuggestion(string acceptedText)
+    private void LearnAcceptedSuggestion(
+        string acceptedText,
+        string? typedPartial = null,
+        SuggestionKind? suggestionKind = null,
+        int charsDeleted = 0)
     {
         var normalized = acceptedText.Trim();
-        if (string.IsNullOrWhiteSpace(normalized)) return;
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return;
+        }
 
         // Stronger learning for explicitly selected suggestions
         if (normalized.Contains(' '))
@@ -611,6 +729,25 @@ public class ApplicationService : IDisposable
         else
         {
             _predictionService.AcceptWord(normalized);
+        }
+
+        _learningEngine.OnSuggestionAccepted(normalized, _writerContext.GetSnapshot());
+
+        if (!_inputService.IsInProtectedField
+            && typedPartial != null
+            && suggestionKind == SuggestionKind.WordCompletion
+            && charsDeleted > 0)
+        {
+            var firstParts = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (firstParts.Length > 0)
+            {
+                var first = firstParts[0];
+                var tp = NormalizeTypingWord(typedPartial);
+                if (tp.Length > 0 && !string.Equals(tp, first, StringComparison.OrdinalIgnoreCase))
+                {
+                    _typingModel.RecordCorrection(tp, first);
+                }
+            }
         }
 
         var parts = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
@@ -624,6 +761,21 @@ public class ApplicationService : IDisposable
             _previousWord = part.Trim().ToLowerInvariant();
             AppendContext(part);
         }
+    }
+
+    private static string NormalizeTypingWord(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return string.Empty;
+        }
+
+        var chars = input
+            .Trim()
+            .Where(ch => char.IsLetterOrDigit(ch) || ch == '\'' || ch == '-')
+            .ToArray();
+
+        return new string(chars).ToLowerInvariant();
     }
 
     private void LearnWordOrPhrase(string text)
@@ -677,6 +829,12 @@ public class ApplicationService : IDisposable
 
     private void AddCurrentTypingToWordBank()
     {
+        if (_inputService.IsInProtectedField)
+        {
+            _loggingService.Debug("AddToWordBank skipped: protected field");
+            return;
+        }
+
         var candidate = !string.IsNullOrWhiteSpace(_currentWord)
             ? _currentWord
             : _inputService.GetCurrentWord();
@@ -693,6 +851,12 @@ public class ApplicationService : IDisposable
 
     private void AddCurrentPhraseToWordBank()
     {
+        if (_inputService.IsInProtectedField)
+        {
+            _loggingService.Debug("AddPhraseToWordBank skipped: protected field");
+            return;
+        }
+
         var phrase = _inputService.GetFullSentenceForOverlay().Trim();
         if (string.IsNullOrWhiteSpace(phrase))
         {
@@ -764,6 +928,12 @@ public class ApplicationService : IDisposable
         _overlayService.Dispose();
         _hotkeyService.Dispose();
         _trayIconService.Dispose();
+        _typingModel.Save();
+        if (_typingModel is IDisposable typingDisposable)
+        {
+            typingDisposable.Dispose();
+        }
+
         if (_predictionService is IDisposable disposable)
         {
             disposable.Dispose();

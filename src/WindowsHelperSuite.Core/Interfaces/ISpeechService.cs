@@ -12,7 +12,7 @@ public interface ISpeechService
 
     bool IsMutedByTypingSpeed { get; }
     void Speak(string text);
-    void SpeakQueued(string text);
+    void SpeakQueued(string text, bool ignoreTypingCooldown = false);
     void Stop();
     void ClearQueue();
     void SetRate(double rate);

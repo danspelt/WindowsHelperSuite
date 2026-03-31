@@ -1,6 +1,7 @@
 using System.Text.Json;
 using WindowsHelperSuite.Core.Interfaces;
 using WindowsHelperSuite.Core.Models;
+using WindowsHelperSuite.Core.Models.Writer;
 
 namespace WindowsHelperSuite.Prediction.Services;
 
@@ -14,6 +15,7 @@ public class PredictionService : IPredictionService, IDisposable
     private readonly object _syncRoot = new();
     private readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
     private readonly string _storagePath;
+    private readonly string _correctionsPath;
     private readonly System.Timers.Timer _saveTimer;
     private WordBankStore _store;
     private bool _dirty;
@@ -26,13 +28,22 @@ public class PredictionService : IPredictionService, IDisposable
     // Recency tracking — recently accepted words get a temporary score boost
     private readonly LinkedList<string> _recentlyAccepted = new();
 
-    public PredictionService()
+    private readonly ITypingModel? _typingModel;
+
+    public PredictionService(ITypingModel? typingModel = null)
     {
+        _typingModel = typingModel;
         _storagePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "WindowsHelperSuite",
             "data",
             "wordbank.json");
+
+        _correctionsPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "WindowsHelperSuite",
+            "data",
+            "corrections.json");
 
         Directory.CreateDirectory(Path.GetDirectoryName(_storagePath)!);
 
@@ -40,11 +51,12 @@ public class PredictionService : IPredictionService, IDisposable
         _saveTimer.Elapsed += (_, _) => FlushSave();
 
         _store = LoadStore();
+        MergeOptionalCorrectionsFile();
         RebuildIndexes();
         EnsureSeedData();
     }
 
-    public IReadOnlyList<SuggestionItem> GetSuggestions(string context, string currentWord)
+    public IReadOnlyList<SuggestionItem> GetSuggestions(string context, string currentWord, WriterContextSnapshot writerContext = default)
     {
         var normalizedWord = NormalizeWord(currentWord);
         var normalizedContext = NormalizePhrase(context);
@@ -53,6 +65,11 @@ public class PredictionService : IPredictionService, IDisposable
 
         lock (_syncRoot)
         {
+            if (writerContext.Mode == WriterTypingMode.Development)
+            {
+                return [];
+            }
+
             var suggestions = new List<SuggestionCandidate>();
 
             if (!string.IsNullOrWhiteSpace(normalizedWord))
@@ -86,9 +103,13 @@ public class PredictionService : IPredictionService, IDisposable
                         .Where(entry => PhraseMatches(entry.Text, normalizedContext, normalizedWord))
                         .Select(entry => new SuggestionCandidate(
                             entry.Text,
-                            entry.Text,
+                            BuildPhraseInsertText(entry.Text, normalizedContext, normalizedWord),
                             SuggestionKind.PhraseCompletion,
                             CalculatePhraseScore(entry, normalizedContext, normalizedWord))));
+
+                AppendTypoCorrectionSuggestions(suggestions, normalizedWord);
+                AppendPhrasePrefixBucketSuggestions(suggestions, normalizedContext, normalizedWord);
+                AppendTypingModelSuggestions(suggestions, normalizedContext, normalizedWord);
             }
             else if (!string.IsNullOrWhiteSpace(lastContextWord))
             {
@@ -97,6 +118,7 @@ public class PredictionService : IPredictionService, IDisposable
 
                 // Also show phrases that continue the context (saves the most typing)
                 suggestions.AddRange(GetContextPhraseSuggestions(normalizedContext, lastContextWord));
+                AppendTypingModelContextPhrases(suggestions, normalizedContext, lastContextWord);
 
                 // If still empty, fall back to frequent words + sentence starters
                 if (suggestions.Count == 0)
@@ -112,7 +134,16 @@ public class PredictionService : IPredictionService, IDisposable
                 suggestions.AddRange(GetFrequentWordSuggestions());
             }
 
-            return suggestions
+            var scaled = suggestions
+                .Select(c =>
+                {
+                    var baseScore = c.Score * ContextScoreMultiplier(writerContext, c.Kind);
+                    var boost = _typingModel?.GetRankingBoost(c.DisplayText, c.Kind, writerContext) ?? 0;
+                    return c with { Score = baseScore + boost };
+                })
+                .ToList();
+
+            return scaled
                 .GroupBy(candidate => candidate.DisplayText, StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.OrderByDescending(item => item.Score).First())
                 .OrderByDescending(candidate => candidate.Score)
@@ -127,6 +158,166 @@ public class PredictionService : IPredictionService, IDisposable
                     Score = candidate.Score
                 })
                 .ToList();
+        }
+    }
+
+    private static double ContextScoreMultiplier(WriterContextSnapshot ctx, SuggestionKind kind)
+    {
+        if (kind != SuggestionKind.PhraseCompletion)
+        {
+            return 1.0;
+        }
+
+        return ctx.Mode switch
+        {
+            WriterTypingMode.Chat => 1.12,
+            WriterTypingMode.Email => 1.08,
+            _ => 1.0
+        };
+    }
+
+    private void AppendTypoCorrectionSuggestions(List<SuggestionCandidate> suggestions, string normalizedWord)
+    {
+        foreach (var c in _store.Corrections)
+        {
+            if (string.IsNullOrWhiteSpace(c.Typo) || string.IsNullOrWhiteSpace(c.Fix))
+            {
+                continue;
+            }
+
+            var typo = c.Typo.Trim();
+            var fix = c.Fix.Trim();
+            if (string.Equals(typo, fix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (!typo.StartsWith(normalizedWord, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(fix, normalizedWord, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var exactTypo = string.Equals(normalizedWord, typo, StringComparison.OrdinalIgnoreCase);
+            var score = (exactTypo ? 2800.0 : 1500.0) + Math.Min(50, Math.Max(1, c.Count)) * 3.0;
+            suggestions.Add(new SuggestionCandidate(fix, fix, SuggestionKind.WordCompletion, score));
+        }
+    }
+
+    private void AppendPhrasePrefixBucketSuggestions(List<SuggestionCandidate> suggestions, string normalizedContext, string normalizedWord)
+    {
+        foreach (var bucket in _store.PhrasePrefixes)
+        {
+            if (string.IsNullOrWhiteSpace(bucket.Prefix))
+            {
+                continue;
+            }
+
+            var prefix = bucket.Prefix.Trim();
+            if (!prefix.StartsWith(normalizedWord, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            foreach (var phrase in bucket.Phrases ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(phrase))
+                {
+                    continue;
+                }
+
+                var trimmed = phrase.Trim();
+                if (!trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var score = 1750.0 + trimmed.Length * 10.0;
+                suggestions.Add(new SuggestionCandidate(
+                    trimmed,
+                    BuildPhraseInsertText(trimmed, normalizedContext, normalizedWord),
+                    SuggestionKind.PhraseCompletion,
+                    score));
+            }
+        }
+    }
+
+    private void AppendTypingModelSuggestions(List<SuggestionCandidate> suggestions, string normalizedContext, string normalizedWord)
+    {
+        if (_typingModel == null || string.IsNullOrEmpty(normalizedWord))
+        {
+            return;
+        }
+
+        foreach (var c in _typingModel.GetCorrectionMatches(normalizedWord))
+        {
+            if (string.IsNullOrWhiteSpace(c.Corrected))
+            {
+                continue;
+            }
+
+            var score = 2600.0 + c.Count * 10.0;
+            suggestions.Add(new SuggestionCandidate(c.Corrected, c.Corrected, SuggestionKind.WordCompletion, score));
+        }
+
+        foreach (var w in _typingModel.GetWords(normalizedWord))
+        {
+            if (string.IsNullOrWhiteSpace(w.Word))
+            {
+                continue;
+            }
+
+            var score = 920.0 + Math.Log(1 + Math.Max(1, w.Count)) * 55;
+            suggestions.Add(new SuggestionCandidate(w.Word, w.Word, SuggestionKind.WordCompletion, score));
+        }
+
+        foreach (var p in _typingModel.GetPhrases(normalizedWord))
+        {
+            if (string.IsNullOrWhiteSpace(p.Phrase) || !PhraseMatches(p.Phrase, normalizedContext, normalizedWord))
+            {
+                continue;
+            }
+
+            var score = 1750.0 + p.Count * 12.0;
+            suggestions.Add(new SuggestionCandidate(
+                p.Phrase,
+                BuildPhraseInsertText(p.Phrase, normalizedContext, normalizedWord),
+                SuggestionKind.PhraseCompletion,
+                score));
+        }
+    }
+
+    private void AppendTypingModelContextPhrases(List<SuggestionCandidate> suggestions, string normalizedContext, string lastContextWord)
+    {
+        if (_typingModel == null || string.IsNullOrWhiteSpace(lastContextWord))
+        {
+            return;
+        }
+
+        foreach (var p in _typingModel.GetPhrases(lastContextWord))
+        {
+            if (string.IsNullOrWhiteSpace(p.Phrase))
+            {
+                continue;
+            }
+
+            var continues = p.Phrase.StartsWith(normalizedContext + " ", StringComparison.OrdinalIgnoreCase) ||
+                            p.Phrase.StartsWith(lastContextWord + " ", StringComparison.OrdinalIgnoreCase);
+            if (!continues)
+            {
+                continue;
+            }
+
+            var score = 1780.0 + p.Count * 12.0;
+            suggestions.Add(new SuggestionCandidate(
+                p.Phrase,
+                BuildPhraseInsertText(p.Phrase, normalizedContext, string.Empty),
+                SuggestionKind.PhraseCompletion,
+                score));
         }
     }
 
@@ -306,6 +497,50 @@ public class PredictionService : IPredictionService, IDisposable
         return JsonSerializer.Deserialize<WordBankStore>(json, _jsonOptions) ?? new WordBankStore();
     }
 
+    /// <summary>Merges optional %AppData%/WindowsHelperSuite/data/corrections.json into the in-memory store (same shape as <see cref="CorrectionsFile"/>).</summary>
+    private void MergeOptionalCorrectionsFile()
+    {
+        if (!File.Exists(_correctionsPath))
+        {
+            return;
+        }
+
+        try
+        {
+            var json = File.ReadAllText(_correctionsPath);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return;
+            }
+
+            var file = JsonSerializer.Deserialize<CorrectionsFile>(json, _jsonOptions);
+            if (file?.Corrections == null)
+            {
+                return;
+            }
+
+            foreach (var c in file.Corrections)
+            {
+                if (string.IsNullOrWhiteSpace(c.Typo) || string.IsNullOrWhiteSpace(c.Fix))
+                {
+                    continue;
+                }
+
+                var duplicate = _store.Corrections.Exists(x =>
+                    string.Equals(x.Typo, c.Typo, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(x.Fix, c.Fix, StringComparison.OrdinalIgnoreCase));
+                if (!duplicate)
+                {
+                    _store.Corrections.Add(c);
+                }
+            }
+        }
+        catch
+        {
+            // Ignore malformed optional file
+        }
+    }
+
     private void ScheduleSave()
     {
         _dirty = true;
@@ -417,7 +652,7 @@ public class PredictionService : IPredictionService, IDisposable
                 yield return new SuggestionCandidate(
                     entry.Text,
                     entry.Text,
-                    SuggestionKind.WordCompletion,
+                    SuggestionKind.NextWord,
                     score);
             }
         }
@@ -479,7 +714,7 @@ public class PredictionService : IPredictionService, IDisposable
                 var frequencyScore = entry.Frequency >= 5 ? entry.Frequency * 18 : entry.Frequency * 12;
                 return new SuggestionCandidate(
                     entry.Text,
-                    entry.Text,
+                    BuildPhraseInsertText(entry.Text, normalizedContext, string.Empty),
                     SuggestionKind.PhraseCompletion,
                     1800 + savingsBoost + frequencyScore + GetRecencyBoost(entry.Text));
             });
@@ -584,23 +819,50 @@ public class PredictionService : IPredictionService, IDisposable
         var charsSaved = Math.Max(0, entry.Text.Length - combined.Length);
         var savingsBoost = charsSaved * 12;
         var recencyBoost = GetRecencyBoost(entry.Text);
-        return exactBoost + prefixBoost + frequencyScore + savingsBoost + recencyBoost;
+        var wordCount = entry.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        var clarityBoost = wordCount switch
+        {
+            <= 2 => 30,
+            <= 5 => 140,
+            <= 7 => 70,
+            _ => -80
+        };
+        return exactBoost + prefixBoost + frequencyScore + savingsBoost + recencyBoost + clarityBoost;
     }
 
-    private static string NormalizeWord(string input)
+    private static string BuildPhraseInsertText(string phrase, string context, string currentWord)
     {
-        if (string.IsNullOrWhiteSpace(input))
+        if (string.IsNullOrWhiteSpace(phrase))
         {
             return string.Empty;
         }
 
-        var chars = input
-            .Trim()
-            .Where(ch => char.IsLetterOrDigit(ch) || ch == '\'' || ch == '-')
-            .ToArray();
+        var combined = string.IsNullOrWhiteSpace(context)
+            ? currentWord.Trim()
+            : string.IsNullOrWhiteSpace(currentWord)
+                ? context.Trim()
+                : $"{context} {currentWord}".Trim();
 
-        return new string(chars).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(combined))
+        {
+            return phrase;
+        }
+
+        if (!phrase.StartsWith(combined, StringComparison.OrdinalIgnoreCase))
+        {
+            return phrase;
+        }
+
+        if (phrase.Length == combined.Length)
+        {
+            return phrase;
+        }
+
+        var remainder = phrase[combined.Length..];
+        return remainder.TrimStart();
     }
+
+    private static string NormalizeWord(string input) => WriterWordBufferPolicy.NormalizeWord(input);
 
     private static string NormalizePhrase(string input)
     {
@@ -631,6 +893,8 @@ public class PredictionService : IPredictionService, IDisposable
         public List<WordBankEntry> Words { get; set; } = [];
         public List<WordBankEntry> Phrases { get; set; } = [];
         public List<WordBankEntry> Bigrams { get; set; } = [];
+        public List<CorrectionEntry> Corrections { get; set; } = [];
+        public List<PhrasePrefixBucket> PhrasePrefixes { get; set; } = [];
     }
 
     private sealed class WordBankEntry

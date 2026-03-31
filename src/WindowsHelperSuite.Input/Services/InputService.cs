@@ -2,6 +2,7 @@ using System.Text;
 using System.Timers;
 using WindowsHelperSuite.Core.Interfaces;
 using WindowsHelperSuite.Core.Models;
+using WindowsHelperSuite.Core.Models.Writer;
 using WindowsHelperSuite.Infrastructure.Hooks;
 using WindowsHelperSuite.Infrastructure.Services;
 
@@ -20,8 +21,16 @@ public class InputService : IInputService, IDisposable
     private volatile bool _suppressHookProcessing;
     /// <summary>When true, the hook does not handle keys so modal UI (e.g. mode menu) receives them.</summary>
     private volatile bool _suspendWriterKeyHandling;
+    private readonly ISecretFieldDetector _secretFieldDetector;
+    private bool _inProtectedField;
 
     public bool IsEnabled { get; set; } = true;
+
+    /// <summary>True while the focused control is treated as password/secret — Writer must not learn or show overlay.</summary>
+    public bool IsInProtectedField => _inProtectedField;
+
+    /// <summary>Fires when entering or leaving protected field mode (password/PIN/token).</summary>
+    public event EventHandler<bool>? SecretFieldProtectionChanged;
 
     /// <summary>Set while the global mode menu (or similar) is shown so overlay selection keys and Esc are not swallowed.</summary>
     public bool SuspendWriterKeyHandling
@@ -50,9 +59,10 @@ public class InputService : IInputService, IDisposable
     public event EventHandler? OverlayDismissRequested;
     public event EventHandler? InvalidTypingDetected; // New event for typing without valid text input
 
-    public InputService(ILoggingService loggingService)
+    public InputService(ILoggingService loggingService, ISecretFieldDetector secretFieldDetector)
     {
         _loggingService = loggingService;
+        _secretFieldDetector = secretFieldDetector;
         _keyboardHook = new KeyboardHookService(loggingService);
 
         // 10 second inactivity timer
@@ -194,7 +204,7 @@ public class InputService : IInputService, IDisposable
                     continue;
                 }
 
-                if (char.IsLetterOrDigit(ch) || ch == '\'' || ch == '-')
+                if (WriterWordBufferPolicy.IsWordExtendingCharacter(ch))
                 {
                     _currentWord.Append(ch);
                     _currentSentence.Append(ch);
@@ -249,6 +259,24 @@ public class InputService : IInputService, IDisposable
         if (!IsEnabled || _suppressHookProcessing)
         {
             return;
+        }
+
+        var secret = _secretFieldDetector.GetSnapshot();
+        if (secret.IsProtected)
+        {
+            if (!_inProtectedField)
+            {
+                EnterProtectedField(secret);
+                _inProtectedField = true;
+            }
+
+            return;
+        }
+
+        if (_inProtectedField)
+        {
+            ExitProtectedField();
+            _inProtectedField = false;
         }
 
         var key = e.KeyCode;
@@ -363,7 +391,7 @@ public class InputService : IInputService, IDisposable
             _inactivityTimer.Stop();
             _inactivityTimer.Start();
 
-            if (char.IsLetterOrDigit(typedChar) || typedChar == '\'' || typedChar == '-')
+            if (WriterWordBufferPolicy.IsWordExtendingCharacter(typedChar))
             {
                 lock (_bufferLock)
                 {
@@ -531,6 +559,36 @@ public class InputService : IInputService, IDisposable
             OverlayDismissRequested?.Invoke(this, EventArgs.Empty);
             TypingStopped?.Invoke(this, EventArgs.Empty);
         }
+    }
+
+    private void EnterProtectedField(SecretFieldSnapshot secret)
+    {
+        lock (_bufferLock)
+        {
+            _currentWord.Clear();
+            _currentSentence.Clear();
+        }
+
+        _typingInProgress = false;
+        _hasValidTextInput = false;
+        _inactivityTimer.Stop();
+        SecretFieldProtectionChanged?.Invoke(this, true);
+        _loggingService.Debug($"Protected field active: Reason={secret.Reason} Process={secret.ProcessName} Control={secret.ControlType}");
+    }
+
+    private void ExitProtectedField()
+    {
+        lock (_bufferLock)
+        {
+            _currentWord.Clear();
+            _currentSentence.Clear();
+        }
+
+        _typingInProgress = false;
+        _hasValidTextInput = false;
+        _inactivityTimer.Stop();
+        SecretFieldProtectionChanged?.Invoke(this, false);
+        _loggingService.Debug("Protected field: exited — Writer buffers cleared");
     }
 
     private void OnInactivityTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)
