@@ -82,6 +82,8 @@ internal sealed class AzureSpeechEngine
             var config = SpeechConfig.FromSubscription(key, region);
             var voice = ResolveVoiceName(settings);
             config.SpeechSynthesisVoiceName = voice;
+            // Richer output than default 16 kHz — clearer playback through Bluetooth / DACs.
+            config.SetSpeechSynthesisOutputFormat(SpeechSynthesisOutputFormat.Riff24Khz16BitMonoPcm);
 
             synthesizer = new SpeechSynthesizer(config, audioConfig: null);
 
@@ -142,12 +144,14 @@ internal sealed class AzureSpeechEngine
             return settings.VoiceName.Trim();
         }
 
-        return "en-US-JennyNeural";
+        // Ava: newer neural voice vs Jenny — generally clearer and more natural for short read-back.
+        return "en-US-AvaNeural";
     }
 
     public static string BuildSsml(string text, SpeechSettings settings, double rateMultiplier)
     {
         var voice = ResolveVoiceName(settings);
+        var voiceAttr = System.Security.SecurityElement.Escape(voice) ?? voice;
         var ratePercent = (int)Math.Round((rateMultiplier - 1.0) * 100);
         var rateStr = ratePercent >= 0 ? $"+{ratePercent}%" : $"{ratePercent}%";
         var pitch = string.IsNullOrWhiteSpace(settings.OnlinePitch) ? "0%" : settings.OnlinePitch.Trim();
@@ -157,12 +161,25 @@ internal sealed class AzureSpeechEngine
 
         var escaped = System.Security.SecurityElement.Escape(text) ?? string.Empty;
 
+        var prosody =
+            $"<prosody rate=\"{rateStr}\" pitch=\"{pitch}\" volume=\"{volume}\">{escaped}</prosody>";
+
+        var styleRaw = settings.OnlineExpressAsStyle?.Trim() ?? string.Empty;
+        string inner;
+        if (styleRaw.Length == 0)
+        {
+            inner = prosody;
+        }
+        else
+        {
+            var styleAttr = System.Security.SecurityElement.Escape(styleRaw) ?? styleRaw;
+            inner = $"<mstts:express-as style=\"{styleAttr}\">{prosody}</mstts:express-as>";
+        }
+
         return $"""
-                <speak version='1.0' xml:lang='en-US'>
-                  <voice name='{voice}'>
-                    <prosody rate='{rateStr}' pitch='{pitch}' volume='{volume}'>
-                      {escaped}
-                    </prosody>
+                <speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">
+                  <voice name="{voiceAttr}">
+                    {inner}
                   </voice>
                 </speak>
                 """;

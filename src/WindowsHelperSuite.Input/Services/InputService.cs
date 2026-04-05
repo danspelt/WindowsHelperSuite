@@ -19,9 +19,8 @@ public class InputService : IInputService, IDisposable
     private bool _typingInProgress;
     private bool _hasValidTextInput;
     private volatile bool _suppressHookProcessing;
-    /// <summary>When true, the hook does not handle keys so modal UI (e.g. mode menu) receives them.</summary>
-    private volatile bool _suspendWriterKeyHandling;
     private readonly ISecretFieldDetector _secretFieldDetector;
+    private readonly IWriterOverlayExclusionDetector _writerOverlayExclusionDetector;
     private bool _inProtectedField;
 
     public bool IsEnabled { get; set; } = true;
@@ -31,16 +30,6 @@ public class InputService : IInputService, IDisposable
 
     /// <summary>Fires when entering or leaving protected field mode (password/PIN/token).</summary>
     public event EventHandler<bool>? SecretFieldProtectionChanged;
-
-    /// <summary>Set while the global mode menu (or similar) is shown so overlay selection keys and Esc are not swallowed.</summary>
-    public bool SuspendWriterKeyHandling
-    {
-        get => _suspendWriterKeyHandling;
-        set => _suspendWriterKeyHandling = value;
-    }
-
-    /// <summary>While the mode menu is open, keys are routed here so arrows work even if another HWND has focus.</summary>
-    public IModeMenuKeySink? ModeMenuKeySink { get; set; }
 
     public bool IsOverlayVisible { get; set; } = false;
 
@@ -59,10 +48,14 @@ public class InputService : IInputService, IDisposable
     public event EventHandler? OverlayDismissRequested;
     public event EventHandler? InvalidTypingDetected; // New event for typing without valid text input
 
-    public InputService(ILoggingService loggingService, ISecretFieldDetector secretFieldDetector)
+    public InputService(
+        ILoggingService loggingService,
+        ISecretFieldDetector secretFieldDetector,
+        IWriterOverlayExclusionDetector writerOverlayExclusionDetector)
     {
         _loggingService = loggingService;
         _secretFieldDetector = secretFieldDetector;
+        _writerOverlayExclusionDetector = writerOverlayExclusionDetector;
         _keyboardHook = new KeyboardHookService(loggingService);
 
         // 10 second inactivity timer
@@ -245,17 +238,6 @@ public class InputService : IInputService, IDisposable
 
     private void OnKeyPressed(object? sender, KeyEventArgs e)
     {
-        if (_suspendWriterKeyHandling)
-        {
-            // Focus often stays in the previous app; WM_KEYDOWN never reaches the WPF menu. Handle here.
-            if (ModeMenuKeySink != null && ModeMenuKeySink.TryConsumeKey(e.KeyCode, e.Ctrl, e.Shift, e.Alt))
-            {
-                e.Handled = true;
-            }
-
-            return;
-        }
-
         if (!IsEnabled || _suppressHookProcessing)
         {
             return;
@@ -277,6 +259,12 @@ public class InputService : IInputService, IDisposable
         {
             ExitProtectedField();
             _inProtectedField = false;
+        }
+
+        if (_writerOverlayExclusionDetector.ShouldExcludeWriterOverlay(out var excludeReason))
+        {
+            EndWriterSessionForNonWriterField(excludeReason);
+            return;
         }
 
         var key = e.KeyCode;
@@ -589,6 +577,30 @@ public class InputService : IInputService, IDisposable
         _inactivityTimer.Stop();
         SecretFieldProtectionChanged?.Invoke(this, false);
         _loggingService.Debug("Protected field: exited — Writer buffers cleared");
+    }
+
+    /// <summary>
+    /// URL bars and similar: not secret, but Writer overlay and buffers must not attach.
+    /// </summary>
+    private void EndWriterSessionForNonWriterField(string reason)
+    {
+        var hadSession = _typingInProgress || _hasValidTextInput || IsOverlayVisible;
+        if (!hadSession)
+        {
+            return;
+        }
+
+        lock (_bufferLock)
+        {
+            _currentWord.Clear();
+            _currentSentence.Clear();
+        }
+
+        _typingInProgress = false;
+        _hasValidTextInput = false;
+        _inactivityTimer.Stop();
+        OverlayDismissRequested?.Invoke(this, EventArgs.Empty);
+        _loggingService.Debug($"Writer session ended — non-writer text field ({reason})");
     }
 
     private void OnInactivityTimerElapsed(object? sender, System.Timers.ElapsedEventArgs e)

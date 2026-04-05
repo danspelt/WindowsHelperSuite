@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using WindowsHelperSuite.Core.Interfaces;
 using WindowsHelperSuite.Core.Models.Settings;
+using static WindowsHelperSuite.Infrastructure.Services.QuickTextSettingsService;
 
 namespace WindowsHelperSuite.Infrastructure.Services;
 
@@ -33,19 +34,56 @@ public class SettingsService : ISettingsService
 
     public void Load()
     {
-        if (File.Exists(SettingsFilePath))
+        if (!File.Exists(SettingsFilePath))
+        {
+            Settings = new AppSettings();
+            Settings.QuickText ??= new QuickTextSettings();
+            NormalizeAndSeedIfEmpty(Settings.QuickText);
+            Save();
+            return;
+        }
+
+        try
         {
             var json = File.ReadAllText(SettingsFilePath);
             var loaded = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions);
-            if (loaded != null)
-            {
-                Settings = loaded;
-            }
+            Settings = loaded ?? new AppSettings();
+            Settings.QuickText ??= new QuickTextSettings();
+            NormalizeAndSeedIfEmpty(Settings.QuickText);
         }
-        else
+        catch (JsonException)
+        {
+            TryBackupCorruptFile(SettingsFilePath);
+            Settings = new AppSettings();
+            Settings.QuickText ??= new QuickTextSettings();
+            NormalizeAndSeedIfEmpty(Settings.QuickText);
+            Save();
+        }
+        catch (IOException)
         {
             Settings = new AppSettings();
-            Save();
+            Settings.QuickText ??= new QuickTextSettings();
+            NormalizeAndSeedIfEmpty(Settings.QuickText);
+        }
+    }
+
+    private static void TryBackupCorruptFile(string path)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(dir))
+            {
+                return;
+            }
+
+            var name = Path.GetFileNameWithoutExtension(path);
+            var dest = Path.Combine(dir, $"{name}.corrupt.{DateTime.UtcNow:yyyyMMddHHmmss}.json");
+            File.Copy(path, dest, overwrite: false);
+        }
+        catch
+        {
+            // best-effort backup only
         }
     }
 
@@ -58,6 +96,8 @@ public class SettingsService : ISettingsService
     public void ResetToDefaults()
     {
         Settings = new AppSettings();
+        Settings.QuickText ??= new QuickTextSettings();
+        NormalizeAndSeedIfEmpty(Settings.QuickText);
         Save();
     }
 }

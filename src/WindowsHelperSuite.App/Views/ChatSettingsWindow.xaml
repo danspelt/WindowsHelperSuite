@@ -1,0 +1,128 @@
+<Window x:Class="WindowsHelperSuite.App.Views.ChatSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="AI Chat Settings"
+        Width="620" Height="680"
+        MinWidth="500" MinHeight="580"
+        WindowStartupLocation="CenterOwner"
+        Background="#0F0F1A" Foreground="White"
+        FontFamily="Segoe UI"
+        SnapsToDevicePixels="True"
+        UseLayoutRounding="True"
+        ResizeMode="CanResizeWithGrip">
+
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/Styles/ChatStyles.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Grid Margin="28,24,28,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0" Text="AI Provider Settings" FontSize="22" FontWeight="SemiBold"
+                   Foreground="{StaticResource Chat.TextPrimary}" Margin="0,0,0,20"/>
+
+        <!-- Settings form -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,16">
+            <StackPanel>
+                <!-- Base URL -->
+                <TextBlock Text="Base URL" FontSize="13" Foreground="{StaticResource Chat.TextSecondary}"
+                           Margin="0,0,0,6"/>
+                <TextBox Text="{Binding BaseUrl, UpdateSourceTrigger=PropertyChanged}"
+                         Background="#16162C" Foreground="#E8E8F0" CaretBrush="#A8A8E8"
+                         BorderBrush="#2A2A48" BorderThickness="1" Padding="12,10"
+                         FontSize="14" Margin="0,0,0,16"/>
+
+                <!-- API Key -->
+                <TextBlock Text="API Key" FontSize="13" Foreground="{StaticResource Chat.TextSecondary}"
+                           Margin="0,0,0,6"/>
+                <PasswordBox x:Name="ApiKeyBox"
+                             Background="#16162C" Foreground="#E8E8F0" CaretBrush="#A8A8E8"
+                             BorderBrush="#2A2A48" BorderThickness="1" Padding="12,10"
+                             FontSize="14" Margin="0,0,0,4"
+                             PasswordChanged="ApiKeyBox_PasswordChanged"/>
+                <TextBlock Text="Leave blank for local servers that don't need auth"
+                           FontSize="11" Foreground="{StaticResource Chat.TextDim}" Margin="0,0,0,16"/>
+
+                <!-- Model -->
+                <TextBlock Text="Model" FontSize="13" Foreground="{StaticResource Chat.TextSecondary}"
+                           Margin="0,0,0,6"/>
+                <TextBox Text="{Binding Model, UpdateSourceTrigger=PropertyChanged}"
+                         Background="#16162C" Foreground="#E8E8F0" CaretBrush="#A8A8E8"
+                         BorderBrush="#2A2A48" BorderThickness="1" Padding="12,10"
+                         FontSize="14" Margin="0,0,0,16"/>
+
+                <!-- Streaming toggle -->
+                <CheckBox IsChecked="{Binding UseStreaming}" Margin="0,0,0,16"
+                          Foreground="{StaticResource Chat.TextPrimary}" FontSize="14">
+                    <TextBlock Text="Enable streaming responses" Foreground="{StaticResource Chat.TextPrimary}"/>
+                </CheckBox>
+
+                <!-- Temperature -->
+                <TextBlock FontSize="13" Foreground="{StaticResource Chat.TextSecondary}" Margin="0,0,0,6">
+                    <Run Text="Temperature: "/><Run Text="{Binding Temperature, StringFormat='{}{0:F1}'}"/>
+                </TextBlock>
+                <Slider Value="{Binding Temperature}" Minimum="0" Maximum="2" TickFrequency="0.1"
+                        IsSnapToTickEnabled="True" Margin="0,0,0,16"/>
+
+                <!-- Timeout -->
+                <TextBlock Text="Timeout (seconds)" FontSize="13"
+                           Foreground="{StaticResource Chat.TextSecondary}" Margin="0,0,0,6"/>
+                <TextBox Text="{Binding TimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                         Background="#16162C" Foreground="#E8E8F0" CaretBrush="#A8A8E8"
+                         BorderBrush="#2A2A48" BorderThickness="1" Padding="12,10"
+                         FontSize="14" Margin="0,0,0,16" MaxWidth="120" HorizontalAlignment="Left"/>
+
+                <!-- System Prompt -->
+                <TextBlock Text="Default System Prompt" FontSize="13"
+                           Foreground="{StaticResource Chat.TextSecondary}" Margin="0,0,0,6"/>
+                <TextBox Text="{Binding DefaultSystemPrompt, UpdateSourceTrigger=PropertyChanged}"
+                         Background="#16162C" Foreground="#E8E8F0" CaretBrush="#A8A8E8"
+                         BorderBrush="#2A2A48" BorderThickness="1" Padding="12,10"
+                         FontSize="14" AcceptsReturn="True" TextWrapping="Wrap"
+                         MinHeight="80" MaxHeight="160" VerticalScrollBarVisibility="Auto"
+                         Margin="0,0,0,8"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Test connection -->
+        <Border Grid.Row="2" Margin="0,0,0,16">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="Test Connection" Style="{StaticResource ChatBtn}"
+                            Command="{Binding TestConnectionCommand}" Margin="0,0,10,0"
+                            IsEnabled="{Binding IsTesting, Converter={x:Static local:InvertBoolConverter.Instance}}"
+                            xmlns:local="clr-namespace:WindowsHelperSuite.App.Views"/>
+                    <TextBlock Text="Testing…" FontSize="13"
+                               Foreground="{StaticResource Chat.TextSecondary}"
+                               VerticalAlignment="Center"
+                               Visibility="{Binding IsTesting, Converter={StaticResource BoolToVis}}"/>
+                </StackPanel>
+                <TextBlock x:Name="TestResultText" Text="{Binding TestResult}"
+                           FontSize="13" TextWrapping="Wrap" Margin="0,8,0,0"
+                           Foreground="{StaticResource Chat.TextSecondary}"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Footer buttons -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Reset Defaults" Style="{StaticResource ChatBtn}"
+                    Command="{Binding ResetCommand}" Margin="0,0,10,0"/>
+            <Button Content="Save" Style="{StaticResource AccentBtn}"
+                    Command="{Binding SaveCommand}" Margin="0,0,10,0"
+                    Click="SaveAndClose"/>
+            <Button Content="Cancel" Style="{StaticResource ChatBtn}"
+                    Click="CancelAndClose"/>
+        </StackPanel>
+    </Grid>
+</Window>

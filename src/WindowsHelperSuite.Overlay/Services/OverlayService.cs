@@ -18,6 +18,10 @@ public class OverlayService : IOverlayService, IDisposable
     private int _totalPages = 1;
     private const int ItemsPerPage = 9;
     private OverlayLayout _layout = OverlayLayout.Vertical;
+    private int _lastLogPageSuggestionCount = int.MinValue;
+    private int _lastLogSuggestionPageIndex = int.MinValue;
+    private int _lastLogCaretX = int.MinValue;
+    private int _lastLogCaretY = int.MinValue;
 
     public event EventHandler<int>? SuggestionSelected;
 
@@ -97,7 +101,7 @@ public class OverlayService : IOverlayService, IDisposable
     public void SetLayout(OverlayLayout layout)
     {
         _layout = layout;
-        _overlayWindow?.SetLayout(layout);
+        RunOnUiThread(() => _overlayWindow?.SetLayout(layout));
         _settingsService.Settings.Ui.Layout = layout;
         _settingsService.Save();
         _loggingService.Information($"Overlay layout set to: {layout}");
@@ -133,7 +137,12 @@ public class OverlayService : IOverlayService, IDisposable
         if (Win32Caret.GetCaretPosition(out var x, out var y))
         {
             RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, ScreenPosition.Above));
-            _loggingService.Debug($"Overlay positioned at caret: {x}, {y}");
+            if (x != _lastLogCaretX || y != _lastLogCaretY)
+            {
+                _lastLogCaretX = x;
+                _lastLogCaretY = y;
+                _loggingService.Debug($"Overlay positioned at caret: {x}, {y}");
+            }
         }
         else
         {
@@ -142,7 +151,12 @@ public class OverlayService : IOverlayService, IDisposable
             var centerX = (int)(screen.Left + screen.Width / 2);
             var centerY = (int)(screen.Top + screen.Height / 2);
             RunOnUiThread(() => _overlayWindow?.PositionNearPoint(centerX, centerY, ScreenPosition.Above));
-            _loggingService.Debug($"Overlay positioned at screen center (caret unavailable): {centerX}, {centerY}");
+            if (centerX != _lastLogCaretX || centerY != _lastLogCaretY)
+            {
+                _lastLogCaretX = centerX;
+                _lastLogCaretY = centerY;
+                _loggingService.Debug($"Overlay positioned at screen center (caret unavailable): {centerX}, {centerY}");
+            }
         }
     }
 
@@ -185,7 +199,13 @@ public class OverlayService : IOverlayService, IDisposable
                 ui.AccentColor, ui.OverlayBackgroundColor, ui.CardColor, ui.TextColor);
             _overlayWindow.ShowSuggestions(_currentPageSuggestions, _currentPage, _totalPages);
         });
-        _loggingService.Debug($"Showing {_currentPageSuggestions.Count} suggestions (page {_currentPage + 1})");
+        if (_currentPageSuggestions.Count != _lastLogPageSuggestionCount
+            || _currentPage != _lastLogSuggestionPageIndex)
+        {
+            _lastLogPageSuggestionCount = _currentPageSuggestions.Count;
+            _lastLogSuggestionPageIndex = _currentPage;
+            _loggingService.Debug($"Showing {_currentPageSuggestions.Count} suggestions (page {_currentPage + 1})");
+        }
     }
 
     private void EnsureWindowCreated()
@@ -211,16 +231,33 @@ public class OverlayService : IOverlayService, IDisposable
         }
     }
 
-    private static void RunOnUiThread(Action action)
+    /// <summary>
+    /// Never runs <paramref name="action"/> on a random thread when the WPF dispatcher is unavailable —
+    /// that was creating <see cref="OverlayWindow"/> off the UI thread and crashing the process.
+    /// </summary>
+    private void RunOnUiThread(Action action)
     {
         var dispatcher = Application.Current?.Dispatcher;
-        if (dispatcher == null || dispatcher.CheckAccess())
+        if (dispatcher == null)
         {
-            action();
+            _loggingService.Warning("Overlay UI skipped: Application.Current is not available yet.");
             return;
         }
 
-        dispatcher.Invoke(action);
+        try
+        {
+            if (dispatcher.CheckAccess())
+            {
+                action();
+                return;
+            }
+
+            dispatcher.Invoke(action);
+        }
+        catch (Exception ex)
+        {
+            _loggingService.Warning($"Overlay UI error: {ex.Message}");
+        }
     }
 
     private void OnSuggestionSelected(object? sender, int slot)

@@ -1,10 +1,15 @@
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using WindowsHelperSuite.Core.Interfaces;
 using WindowsHelperSuite.Core.Models;
 using WindowsHelperSuite.Core.Models.Settings;
+using WindowsHelperSuite.Infrastructure.Services;
 using WpfColor = System.Windows.Media.Color;
 using WpfFontFamily = System.Windows.Media.FontFamily;
 using HotkeyBinding = WindowsHelperSuite.Core.Models.KeyBinding;
@@ -13,8 +18,15 @@ namespace WindowsHelperSuite.App;
 
 public partial class HotkeySettingsWindow : Window
 {
+    public const int TabGeneral = 0;
+    public const int TabHotkeys = 1;
+    public const int TabSpeech = 2;
+    public const int TabWriter = 3;
+    public const int TabWordsPhrases = 4;
+
     private readonly ISettingsService _settingsService;
     private readonly Action _onSaved;
+    private readonly int? _initialTabIndex;
 
     // ── Appearance pending state ──
     private int _pendingFontSize;
@@ -50,7 +62,7 @@ public partial class HotkeySettingsWindow : Window
         ("AddToWordBank",              "Add Word to Bank",             "📝"),
         ("AddPhraseToWordBank",        "Add Phrase to Bank",           "📋"),
         ("FixClipboardCapitalization", "Fix Clipboard Capitalization", "✏"),
-        ("OpenModeMenu",               "Open Mode Menu",               "☰"),
+        ("OpenModeMenu",               "Open Quick Menu", "☰"),
     ];
 
     private static readonly Dictionary<string, string> DefaultGestures = new()
@@ -72,18 +84,54 @@ public partial class HotkeySettingsWindow : Window
 
     private readonly Dictionary<string, (Border Chip, TextBlock ChipText, System.Windows.Controls.Button ChangeBtn)> _rowRefs = new();
 
-    public HotkeySettingsWindow(ISettingsService settingsService, Action onSaved)
+    private QuickTextSettings _pendingQuickText = new();
+    private SpeechSettings _pendingSpeech = new();
+    private WriterSettings _pendingWriter = new();
+    private bool _speechUiWired;
+    private bool _writerUiWired;
+
+    private static readonly JsonSerializerOptions CloneJson = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
+
+    public HotkeySettingsWindow(ISettingsService settingsService, Action onSaved, int? initialTabIndex = null)
     {
         _settingsService = settingsService;
         _onSaved = onSaved;
+        _initialTabIndex = initialTabIndex;
         InitializeComponent();
+        SourceInitialized += (_, _) => ApplyNativeDarkFrame();
+        _pendingQuickText = QuickTextSettingsService.Clone(_settingsService.Settings.QuickText);
+        _pendingSpeech = DeepClone(_settingsService.Settings.Speech);
+        _pendingWriter = DeepClone(_settingsService.Settings.Writer);
         LoadBindings();
         LoadAppearance();
         Loaded += (_, _) =>
         {
             BuildRows();
             BuildAppearanceTab();
+            BuildSpeechTab();
+            BuildWriterTab();
+            WordsPhrasesPanel.Attach(_pendingQuickText);
+            if (_initialTabIndex is int tab)
+            {
+                MainTabs.SelectedIndex = Math.Clamp(tab, 0, MainTabs.Items.Count - 1);
+            }
         };
+    }
+
+    public void NavigateToTab(int index)
+    {
+        MainTabs.SelectedIndex = Math.Clamp(index, 0, MainTabs.Items.Count - 1);
+        Activate();
+    }
+
+    private static T DeepClone<T>(T value)
+        where T : class
+    {
+        return JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(value, CloneJson), CloneJson)!;
     }
 
     private void MainTabs_SelectionChanged(object sender, SelectionChangedEventArgs e) { }
@@ -133,6 +181,124 @@ public partial class HotkeySettingsWindow : Window
         SetHexAndPreview(TextHex,   TextPreview,   _pendingText);
 
         _suppressColorEvents = false;
+    }
+
+    private void BuildSpeechTab()
+    {
+        if (!_speechUiWired)
+        {
+            SpeakModeCombo.Items.Clear();
+            foreach (SpeakMode m in Enum.GetValues(typeof(SpeakMode)))
+            {
+                SpeakModeCombo.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = m.ToString(), Tag = m });
+            }
+
+            VoiceModeCombo.Items.Clear();
+            foreach (SpeechVoiceMode m in Enum.GetValues(typeof(SpeechVoiceMode)))
+            {
+                VoiceModeCombo.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = DescribeVoiceMode(m), Tag = m });
+            }
+
+            SpeechRateSlider.ValueChanged += (_, _) =>
+            {
+                _pendingSpeech.SpeechRate = (int)Math.Round(SpeechRateSlider.Value);
+                SpeechRateLabel.Text = _pendingSpeech.SpeechRate.ToString();
+            };
+            SpeechVolumeSlider.ValueChanged += (_, _) =>
+            {
+                _pendingSpeech.SpeechVolume = (int)Math.Round(SpeechVolumeSlider.Value);
+                SpeechVolumeLabel.Text = _pendingSpeech.SpeechVolume.ToString();
+            };
+            SpeakModeCombo.SelectionChanged += (_, _) =>
+            {
+                if (SpeakModeCombo.SelectedItem is System.Windows.Controls.ComboBoxItem { Tag: SpeakMode sm })
+                {
+                    _pendingSpeech.SpeakMode = sm;
+                }
+            };
+            VoiceModeCombo.SelectionChanged += (_, _) =>
+            {
+                if (VoiceModeCombo.SelectedItem is System.Windows.Controls.ComboBoxItem { Tag: SpeechVoiceMode vm })
+                {
+                    _pendingSpeech.VoiceMode = vm;
+                }
+            };
+            SpeechVoiceNameBox.TextChanged += (_, _) => _pendingSpeech.VoiceName = SpeechVoiceNameBox.Text.Trim();
+            SpeechEnableSelection.Checked += (_, _) => _pendingSpeech.EnableSpeechOnSelection = true;
+            SpeechEnableSelection.Unchecked += (_, _) => _pendingSpeech.EnableSpeechOnSelection = false;
+            SpeechHeadsetOnly.Checked += (_, _) => _pendingSpeech.OnlySpeakOnHeadset = true;
+            SpeechHeadsetOnly.Unchecked += (_, _) => _pendingSpeech.OnlySpeakOnHeadset = false;
+            _speechUiWired = true;
+        }
+
+        SpeechEnableSelection.IsChecked = _pendingSpeech.EnableSpeechOnSelection;
+        SpeechHeadsetOnly.IsChecked = _pendingSpeech.OnlySpeakOnHeadset;
+        SpeechRateSlider.Value = Math.Clamp(_pendingSpeech.SpeechRate, -2, 2);
+        SpeechRateLabel.Text = _pendingSpeech.SpeechRate.ToString();
+        SpeechVolumeSlider.Value = Math.Clamp(_pendingSpeech.SpeechVolume, 0, 100);
+        SpeechVolumeLabel.Text = _pendingSpeech.SpeechVolume.ToString();
+        SpeechVoiceNameBox.Text = _pendingSpeech.VoiceName;
+        SelectComboByTag(SpeakModeCombo, (object)_pendingSpeech.SpeakMode);
+        SelectComboByTag(VoiceModeCombo, (object)_pendingSpeech.VoiceMode);
+    }
+
+    private void BuildWriterTab()
+    {
+        if (!_writerUiWired)
+        {
+            WriterAutoShow.Checked += (_, _) => _pendingWriter.AutoShowSuggestions = true;
+            WriterAutoShow.Unchecked += (_, _) => _pendingWriter.AutoShowSuggestions = false;
+            WriterFollowCaret.Checked += (_, _) => _pendingWriter.FollowCaret = true;
+            WriterFollowCaret.Unchecked += (_, _) => _pendingWriter.FollowCaret = false;
+            WriterManualKeyBox.TextChanged += (_, _) => _pendingWriter.ManualTriggerKey = WriterManualKeyBox.Text.Trim();
+            WriterDockBox.TextChanged += (_, _) => _pendingWriter.DockPosition = WriterDockBox.Text.Trim();
+            WriterMaxSugSlider.ValueChanged += (_, _) =>
+            {
+                _pendingWriter.MaxSuggestions = (int)Math.Round(WriterMaxSugSlider.Value);
+                WriterMaxSugLabel.Text = _pendingWriter.MaxSuggestions.ToString();
+            };
+            WriterDebounceSlider.ValueChanged += (_, _) =>
+            {
+                _pendingWriter.DebounceTimeMs = (int)Math.Round(WriterDebounceSlider.Value);
+                WriterDebounceLabel.Text = _pendingWriter.DebounceTimeMs.ToString();
+            };
+            WriterAutoCap.Checked += (_, _) => _pendingWriter.AutoCapitalizeSentences = true;
+            WriterAutoCap.Unchecked += (_, _) => _pendingWriter.AutoCapitalizeSentences = false;
+            WriterCapI.Checked += (_, _) => _pendingWriter.CapitalizeSingleLetterI = true;
+            WriterCapI.Unchecked += (_, _) => _pendingWriter.CapitalizeSingleLetterI = false;
+            _writerUiWired = true;
+        }
+
+        WriterAutoShow.IsChecked = _pendingWriter.AutoShowSuggestions;
+        WriterFollowCaret.IsChecked = _pendingWriter.FollowCaret;
+        WriterManualKeyBox.Text = _pendingWriter.ManualTriggerKey;
+        WriterDockBox.Text = _pendingWriter.DockPosition;
+        WriterMaxSugSlider.Value = Math.Clamp(_pendingWriter.MaxSuggestions, 3, 15);
+        WriterMaxSugLabel.Text = _pendingWriter.MaxSuggestions.ToString();
+        WriterDebounceSlider.Value = Math.Clamp(_pendingWriter.DebounceTimeMs, 50, 500);
+        WriterDebounceLabel.Text = _pendingWriter.DebounceTimeMs.ToString();
+        WriterAutoCap.IsChecked = _pendingWriter.AutoCapitalizeSentences;
+        WriterCapI.IsChecked = _pendingWriter.CapitalizeSingleLetterI;
+    }
+
+    private static string DescribeVoiceMode(SpeechVoiceMode m) => m switch
+    {
+        SpeechVoiceMode.BestQualityOnlineWithOfflineBackup => "Online + offline backup",
+        SpeechVoiceMode.OfflineOnly => "Offline only",
+        SpeechVoiceMode.OnlineOnly => "Online only",
+        _ => m.ToString(),
+    };
+
+    private static void SelectComboByTag(System.Windows.Controls.ComboBox box, object value)
+    {
+        foreach (System.Windows.Controls.ComboBoxItem item in box.Items.OfType<System.Windows.Controls.ComboBoxItem>())
+        {
+            if (item.Tag?.Equals(value) == true)
+            {
+                box.SelectedItem = item;
+                return;
+            }
+        }
     }
 
     private static void BuildSwatches(WrapPanel panel, string[] presets,
@@ -465,39 +631,52 @@ public partial class HotkeySettingsWindow : Window
 
     private void ResetBtn_Click(object sender, RoutedEventArgs e)
     {
-        // Reset whichever tab is active
-        var isHotkeys = MainTabs.SelectedIndex == 0;
-
-        if (isHotkeys)
+        switch (MainTabs.SelectedIndex)
         {
-            foreach (var (action, _, _) in KnownActions)
-                _pending[action] = DefaultGestures.GetValueOrDefault(action, string.Empty);
-            BuildRows();
-        }
-        else
-        {
-            _pendingFontSize  = 14;
-            _pendingOpacity   = 100;
-            _pendingLargeText = false;
-            _pendingLayout    = OverlayLayout.Vertical;
-            _pendingAccent    = "#4ADE80";
-            _pendingBg        = "#0F0F14";
-            _pendingCard      = "#1E1F2A";
-            _pendingText      = "#F0F0F5";
+            case 0:
+                _pendingFontSize  = 14;
+                _pendingOpacity   = 100;
+                _pendingLargeText = false;
+                _pendingLayout    = OverlayLayout.Vertical;
+                _pendingAccent    = "#4ADE80";
+                _pendingBg        = "#0F0F14";
+                _pendingCard      = "#1E1F2A";
+                _pendingText      = "#F0F0F5";
 
-            _suppressColorEvents = true;
-            FontSizeSlider.Value = _pendingFontSize;
-            FontSizeLabel.Text   = _pendingFontSize.ToString();
-            OpacitySlider.Value  = _pendingOpacity;
-            OpacityLabel.Text    = "100%";
-            LargeTextCheck.IsChecked   = false;
-            LayoutVertical.IsChecked   = true;
-            LayoutHorizontal.IsChecked = false;
-            SetHexAndPreview(AccentHex, AccentPreview, _pendingAccent);
-            SetHexAndPreview(BgHex,     BgPreview,     _pendingBg);
-            SetHexAndPreview(CardHex,   CardPreview,   _pendingCard);
-            SetHexAndPreview(TextHex,   TextPreview,   _pendingText);
-            _suppressColorEvents = false;
+                _suppressColorEvents = true;
+                FontSizeSlider.Value = _pendingFontSize;
+                FontSizeLabel.Text   = _pendingFontSize.ToString();
+                OpacitySlider.Value  = _pendingOpacity;
+                OpacityLabel.Text    = "100%";
+                LargeTextCheck.IsChecked   = false;
+                LayoutVertical.IsChecked   = true;
+                LayoutHorizontal.IsChecked = false;
+                SetHexAndPreview(AccentHex, AccentPreview, _pendingAccent);
+                SetHexAndPreview(BgHex,     BgPreview,     _pendingBg);
+                SetHexAndPreview(CardHex,   CardPreview,   _pendingCard);
+                SetHexAndPreview(TextHex,   TextPreview,   _pendingText);
+                _suppressColorEvents = false;
+                break;
+            case 1:
+                foreach (var (action, _, _) in KnownActions)
+                {
+                    _pending[action] = DefaultGestures.GetValueOrDefault(action, string.Empty);
+                }
+
+                BuildRows();
+                break;
+            case 2:
+                _pendingSpeech = new SpeechSettings();
+                BuildSpeechTab();
+                break;
+            case 3:
+                _pendingWriter = new WriterSettings();
+                BuildWriterTab();
+                break;
+            case 4:
+                QuickTextSettingsService.ResetToFactoryDefaults(_pendingQuickText);
+                WordsPhrasesPanel.Attach(_pendingQuickText);
+                break;
         }
     }
 
@@ -531,8 +710,44 @@ public partial class HotkeySettingsWindow : Window
         ui.CardColor              = _pendingCard;
         ui.TextColor              = _pendingText;
 
+        _settingsService.Settings.QuickText = QuickTextSettingsService.Clone(_pendingQuickText);
+        _settingsService.Settings.Speech = DeepClone(_pendingSpeech);
+        _settingsService.Settings.Writer = DeepClone(_pendingWriter);
+
         _settingsService.Save();
         _onSaved();
         Close();
     }
+
+    /// <summary>Paints the system frame to match the dark UI so the default light DWM ring disappears.</summary>
+    private void ApplyNativeDarkFrame()
+    {
+        var h = new WindowInteropHelper(this).Handle;
+        if (h == IntPtr.Zero)
+        {
+            return;
+        }
+
+        const int DwmwaUseImmersiveDarkMode = 20;
+        const int DwmwaBorderColor = 34;
+        const int DwmwaCaptionColor = 35;
+        const int DwmwaCaptionText = 36;
+
+        int one = 1;
+        _ = DwmSetWindowAttribute(h, DwmwaUseImmersiveDarkMode, ref one, sizeof(int));
+
+        int borderRgb = ColorRefFromRgb(0x0F, 0x0F, 0x1A);
+        _ = DwmSetWindowAttribute(h, DwmwaBorderColor, ref borderRgb, sizeof(int));
+
+        int captionRgb = ColorRefFromRgb(0x12, 0x12, 0x1C);
+        _ = DwmSetWindowAttribute(h, DwmwaCaptionColor, ref captionRgb, sizeof(int));
+
+        int textRgb = ColorRefFromRgb(0xFA, 0xFA, 0xFF);
+        _ = DwmSetWindowAttribute(h, DwmwaCaptionText, ref textRgb, sizeof(int));
+    }
+
+    private static int ColorRefFromRgb(byte r, byte g, byte b) => r | (g << 8) | (b << 16);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 }

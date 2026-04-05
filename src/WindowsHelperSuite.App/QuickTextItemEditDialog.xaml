@@ -1,0 +1,139 @@
+<Window x:Class="WindowsHelperSuite.App.QuickTextItemEditDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Edit item"
+        SizeToContent="Height"
+        Width="460"
+        WindowStartupLocation="CenterOwner"
+        Background="#0F0F1A"
+        Foreground="White"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        FontFamily="Segoe UI"
+        SnapsToDevicePixels="True"
+        UseLayoutRounding="True">
+    <Window.Resources>
+        <Style x:Key="DialogBtn" TargetType="Button">
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="8" Padding="{TemplateBinding Padding}"
+                                Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.7"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#9090C0"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+
+        <Style x:Key="FieldBox" TargetType="TextBox">
+            <Setter Property="Background" Value="#16162C"/>
+            <Setter Property="Foreground" Value="#E8E8F0"/>
+            <Setter Property="CaretBrush" Value="#A8A8E8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#2A2A4A"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+
+        <Style TargetType="CheckBox">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Grid Width="40" Height="22">
+                                <Border x:Name="SwitchTrack" CornerRadius="11"
+                                        Background="#2A2A48" BorderThickness="1"
+                                        BorderBrush="#3A3A5C"/>
+                                <Border x:Name="SwitchThumb" Width="16" Height="16"
+                                        CornerRadius="8" Background="#6A6A90"
+                                        HorizontalAlignment="Left" Margin="3,0,0,0"
+                                        VerticalAlignment="Center"/>
+                            </Grid>
+                            <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center"
+                                              RecognizesAccessKey="True"/>
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="SwitchTrack" Property="Background" Value="#4848B0"/>
+                                <Setter TargetName="SwitchTrack" Property="BorderBrush" Value="#6B6BE0"/>
+                                <Setter TargetName="SwitchThumb" Property="Background" Value="#EEEEFF"/>
+                                <Setter TargetName="SwitchThumb" Property="HorizontalAlignment" Value="Right"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsChecked" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="SwitchTrack" Property="Background" Value="#343458"/>
+                                <Setter TargetName="SwitchThumb" Property="Background" Value="#8A8AB0"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Padding="24,20" Background="#0F0F1A">
+        <StackPanel>
+            <TextBlock x:Name="HintText" Text="Text inserted when you pick this item."
+                       FontSize="12" Foreground="#66668A" Margin="0,0,0,16" TextWrapping="Wrap"/>
+
+            <TextBlock Text="Text" Style="{StaticResource FieldLabel}"/>
+            <TextBox x:Name="BodyTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72"
+                     Style="{StaticResource FieldBox}" FontSize="14"/>
+
+            <TextBlock Text="Speak text (optional)" Style="{StaticResource FieldLabel}" Margin="0,16,0,6"/>
+            <TextBox x:Name="SpeakInput" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56"
+                     Style="{StaticResource FieldBox}"/>
+            <TextBlock Text="Leave blank to use the same as Text." FontSize="11" Foreground="#55558A" Margin="0,4,0,0"/>
+
+            <Border Background="#1A1A30" Height="1" Margin="0,18,0,14"/>
+
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                <CheckBox x:Name="EnabledCheck" Content="Enabled" Foreground="#C8C8E8" Margin="0,0,24,0"/>
+                <CheckBox x:Name="FavoriteCheck" Content="Favorite" Foreground="#C8C8E8"/>
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Cancel" MinWidth="88" Margin="0,0,10,0" Click="Cancel_Click"
+                        Background="#252542" Foreground="#A0A0C8"
+                        Style="{StaticResource DialogBtn}"/>
+                <Button Content="Save" MinWidth="88" Click="Ok_Click"
+                        Style="{StaticResource DialogBtn}">
+                    <Button.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="#3A3A9E" Offset="0"/>
+                            <GradientStop Color="#5252C0" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Button.Background>
+                    <Button.Foreground>
+                        <SolidColorBrush Color="White"/>
+                    </Button.Foreground>
+                </Button>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>

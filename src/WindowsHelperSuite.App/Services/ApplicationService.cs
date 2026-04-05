@@ -1,8 +1,18 @@
+using System.Collections.Concurrent;
 using System.Linq;
+using System.Windows.Threading;
+using WindowsHelperSuite.AI.Contracts;
+using WindowsHelperSuite.AI.Models;
+using WindowsHelperSuite.AI.Providers;
+using WindowsHelperSuite.AI.Services;
+using WindowsHelperSuite.App;
 using WindowsHelperSuite.App.Services.Writer;
+using WindowsHelperSuite.App.ViewModels;
+using WindowsHelperSuite.App.Views;
 using WindowsHelperSuite.Core.Interfaces;
 using WindowsHelperSuite.Core.Models;
 using WindowsHelperSuite.Core.Models.Settings;
+using WindowsHelperSuite.Core.Models.Writer;
 using WindowsHelperSuite.Core.Modes;
 using WindowsHelperSuite.Core.Modules.Text;
 using WindowsHelperSuite.Infrastructure.Audio;
@@ -26,6 +36,7 @@ public class ApplicationService : IDisposable
     private readonly InputService _inputService;
     private readonly IPredictionService _predictionService;
     private readonly IWriterContext _writerContext;
+    private readonly ManualWriterPhaseContext? _manualPhaseContext;
     private readonly ILearningEngine _learningEngine;
     private readonly ITypingModel _typingModel;
     private readonly ISpeechService _speechService;
@@ -36,6 +47,14 @@ public class ApplicationService : IDisposable
     private const int MaxPhraseContextWords = 4096;
     private int _focusLostCount = 0; // Require multiple failed checks before hiding
     private SpeakMode _speakMode = SpeakMode.Both;
+    private readonly object _writerStateLock = new();
+    private readonly IAiVocabularyGateService _aiVocabGate;
+    private readonly ConcurrentDictionary<string, Task<bool>> _vocabGateTasks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly IWriterVocabularyRemoteStore _remoteVocabulary;
+    private readonly IChatService _chatService;
+    private readonly IConversationStore _conversationStore;
+    private readonly ChatOptions _chatOptions;
+    private ChatWindow? _chatWindow;
 
     public ApplicationService(
         IWriterContext? writerContext = null,
@@ -45,14 +64,44 @@ public class ApplicationService : IDisposable
         _loggingService = new LoggingService();
         _settingsService = new SettingsService();
         _settingsService.Load();
+        _settingsService.Settings.MongoVocabulary ??= new MongoVocabularySettings();
 
-        _trayIconService = new TrayIconService(_loggingService, _settingsService, ReloadHotkeys);
+        _remoteVocabulary = WriterVocabularyMongoStore.Create(_settingsService.Settings.MongoVocabulary, _loggingService);
+        if (_remoteVocabulary.IsEnabled)
+        {
+            var mv = _settingsService.Settings.MongoVocabulary;
+            _loggingService.Information(
+                $"Mongo vocabulary sync on → {mv.DatabaseName}.{mv.CollectionName}");
+        }
+
+        _aiVocabGate = new AiVocabularyGateService(_loggingService, () => _settingsService.Settings.Ai);
+
+        // AI Chat services
+        _chatOptions = LoadChatOptions();
+        var chatProvider = new OpenAiCompatibleChatProvider(_chatOptions, _loggingService);
+        _chatService = new ChatService(chatProvider, _loggingService);
+        _conversationStore = new JsonConversationStore(_loggingService);
+
+        _trayIconService = new TrayIconService(_loggingService, _settingsService, ReloadHotkeys, OpenChat);
         _hotkeyService = new HotkeyService(_loggingService);
         _overlayService = new OverlayService(_loggingService, _settingsService);
-        _inputService = new InputService(_loggingService, new CachingSecretFieldDetector(new SecretFieldDetector()));
+        _inputService = new InputService(
+            _loggingService,
+            new CachingSecretFieldDetector(new SecretFieldDetector()),
+            new CachingWriterOverlayExclusionDetector(new WriterOverlayExclusionDetector()));
         _typingModel = typingModel ?? new TypingModelService();
         _predictionService = new PredictionService(_typingModel);
-        _writerContext = writerContext ?? new CachingWriterContext(new ForegroundWriterContext());
+        if (writerContext != null)
+        {
+            _writerContext = writerContext;
+            _manualPhaseContext = null;
+        }
+        else
+        {
+            _manualPhaseContext = new ManualWriterPhaseContext(
+                new CachingWriterContext(new ForegroundWriterContext()));
+            _writerContext = _manualPhaseContext;
+        }
         _learningEngine = learningEngine ?? new DefaultLearningEngine();
         _speechService = new SpeechService(() => _settingsService.Settings.Speech, _loggingService);
 
@@ -69,7 +118,8 @@ public class ApplicationService : IDisposable
         _trayIconService.ApplyModeIndicator(_modeManager.CurrentMode);
         _modeManager.ModeChanged += (_, mode) => _trayIconService.ApplyModeIndicator(mode);
 
-        _inputService.SecretFieldProtectionChanged += OnSecretFieldProtectionChanged;
+        _inputService.SecretFieldProtectionChanged += (_, isProtected) =>
+            DeferWriterUi(() => OnSecretFieldProtectionChanged(_, isProtected));
 
         // Wire up suggestion selection to text injection
         _overlayService.SuggestionSelected += OnSuggestionSelected;
@@ -89,79 +139,114 @@ public class ApplicationService : IDisposable
         _loggingService.Information("Application running");
     }
 
+    /// <summary>
+    /// Keyboard hook runs on a dedicated thread; overlay and prediction must run on the WPF dispatcher
+    /// so we never block the hook with WPF/UIAutomation work (that caused crashes while typing).
+    /// </summary>
+    private void DeferWriterUi(Action action)
+    {
+        void Wrapped()
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                _loggingService.Warning($"Writer UI: {ex.Message}");
+            }
+        }
+
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d == null)
+        {
+            Wrapped();
+            return;
+        }
+
+        if (d.CheckAccess())
+        {
+            Wrapped();
+            return;
+        }
+
+        d.BeginInvoke(DispatcherPriority.Normal, Wrapped);
+    }
+
     private void WireInputToOverlay()
     {
-        // Show overlay when typing starts
-        _inputService.TypingStarted += (s, e) =>
-        {
-            try { ShowOverlay(); }
-            catch (Exception ex) { _loggingService.Warning($"TypingStarted handler error: {ex.Message}"); }
-        };
+        _inputService.TypingStarted += (_, _) => DeferWriterUi(ShowOverlay);
 
-        // Update suggestions as text is captured + notify speech of keystroke
-        _inputService.TextCaptured += (s, text) =>
+        _inputService.TextCaptured += (_, text) =>
         {
             try
             {
                 _speechService.NotifyKeystroke();
-                UpdateSuggestions(text);
             }
-            catch (Exception ex) { _loggingService.Warning($"TextCaptured handler error: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                _loggingService.Warning($"NotifyKeystroke: {ex.Message}");
+            }
+
+            DeferWriterUi(() => UpdateSuggestions(text));
         };
 
-        _inputService.WordTyped += (s, e) =>
+        _inputService.WordTyped += (_, e) =>
         {
             try
             {
-                OnWordTyped(e);
-
-                // After every space, ensure the word bank opens with next-word suggestions
-                _hasValidTextInput = true;
-                _inputService.IsOverlayVisible = true;
-                _focusCheckTimer.Start();
-                UpdateSuggestions(string.Empty);
+                var finalWord = ApplyWordCapitalizationInjectionIfNeeded(e);
+                DeferWriterUi(() =>
+                {
+                    OnWordTypedDeferred(finalWord, e);
+                    _hasValidTextInput = true;
+                    _inputService.IsOverlayVisible = true;
+                    _focusCheckTimer.Start();
+                    UpdateSuggestions(string.Empty);
+                });
             }
-            catch (Exception ex) { _loggingService.Warning($"WordTyped handler error: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                _loggingService.Warning($"WordTyped handler error: {ex.Message}");
+            }
         };
 
         _inputService.PasteIntercept += OnPasteIntercept;
-        _inputService.SentenceTyped += (s, sentence) =>
+        _inputService.SentenceTyped += (_, sentence) => DeferWriterUi(() => OnSentenceTyped(sentence));
+        _inputService.OverlayDismissRequested += (_, _) => DeferWriterUi(() =>
         {
-            try { OnSentenceTyped(sentence); }
-            catch (Exception ex) { _loggingService.Warning($"SentenceTyped handler error: {ex.Message}"); }
-        };
-        _inputService.OverlayDismissRequested += (s, e) =>
-        {
-            // Esc → instant silence + hide
             _speechService.Stop();
             HideOverlay();
-            _currentWord = string.Empty;
+            lock (_writerStateLock)
+            {
+                _currentWord = string.Empty;
+                _currentSuggestions = [];
+            }
+
             _hasValidTextInput = false;
             _previousWord = string.Empty;
             _recentWords.Clear();
             _loggingService.Debug("Overlay hidden - explicit dismissal requested");
-        };
+        });
 
-        // Keep overlay visible when typing stops so the word bank remains available
-        _inputService.TypingStopped += (s, e) =>
+        _inputService.TypingStopped += (_, _) => DeferWriterUi(() =>
         {
-            _currentWord = string.Empty;
-            _loggingService.Debug("Typing stopped - keeping overlay visible");
-        };
+            lock (_writerStateLock)
+            {
+                _currentWord = string.Empty;
+            }
 
-        // Hide overlay when typing on desktop (no valid text input)
-        _inputService.InvalidTypingDetected += (s, e) =>
+            _loggingService.Debug("Typing stopped - keeping overlay visible");
+        });
+
+        _inputService.InvalidTypingDetected += (_, _) => DeferWriterUi(() =>
         {
             HideOverlay();
             _loggingService.Debug("Overlay hidden - invalid typing detected (desktop)");
-        };
+        });
 
-        // Handle selection keys 1-9
-        // Resolve the suggestion SYNCHRONOUSLY so we capture the correct word,
-        // then dispatch only the text injection async to avoid hook timeout.
-        _inputService.SelectionKeyPressed += (s, slot) =>
+        _inputService.SelectionKeyPressed += (_, slot) =>
         {
-            // Cooldown: ignore auto-repeat / rapid presses that would pick from refreshed list
             var now = Environment.TickCount64;
             if (now - _lastSelectionTick < 300)
             {
@@ -169,52 +254,53 @@ public class ApplicationService : IDisposable
                 return;
             }
 
-            var suggestion = _currentSuggestions.FirstOrDefault(x => x.Slot == slot);
-            if (suggestion == null)
+            SuggestionItem? suggestion;
+            int charsToDelete;
+            string typedPartial;
+            lock (_writerStateLock)
             {
-                _loggingService.Debug($"Selection key {slot}: no suggestion found");
-                return;
+                suggestion = _currentSuggestions.FirstOrDefault(x => x.Slot == slot);
+                if (suggestion == null)
+                {
+                    _loggingService.Debug($"Selection key {slot}: no suggestion found");
+                    return;
+                }
+
+                charsToDelete = _currentWord?.Length ?? 0;
+                typedPartial = _currentWord ?? string.Empty;
+                _lastSelectionTick = now;
+                _currentWord = string.Empty;
+                _currentSuggestions = [];
             }
 
-            _lastSelectionTick = now;
+            _inputService.ResetAfterInsertion();
 
             var rawBeforePartial = _inputService.GetRawTextBeforeCurrentPartial();
             var capOpts = WriterCapitalizationOptions.From(_settingsService.Settings.Writer);
             var acceptedText = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText, capOpts);
             var textToInsert = ResolveSuggestionInsertText(suggestion, acceptedText);
-            var charsToDelete = _currentWord?.Length ?? 0;
-            var typedPartial = _currentWord ?? string.Empty;
+            var suggestionKind = suggestion.Kind;
 
-            // Immediately clear so a rapid second press won't double-insert from stale list
-            _currentWord = string.Empty;
-            _currentSuggestions = [];
-            _inputService.ResetAfterInsertion();
+            _loggingService.Debug(
+                $"Selection key {slot}: suggestion='{suggestion.DisplayText}', acceptedText='{acceptedText}', textToInsert='{textToInsert}', charsToDelete={charsToDelete}");
 
-            _loggingService.Debug($"Selection key {slot}: suggestion='{suggestion.DisplayText}', acceptedText='{acceptedText}', textToInsert='{textToInsert}', charsToDelete={charsToDelete}");
-
-            // Visual feedback — flash the selected button green
-            _overlayService.FlashSelection(slot);
-
-            // Inject text on the UI thread (STA + message pump = clipboard works)
-            System.Windows.Application.Current?.Dispatcher.BeginInvoke(() =>
+            DeferWriterUi(() =>
             {
-                // Suppress hook processing so injected keystrokes don't double-update the sentence buffer
+                _overlayService.FlashSelection(slot);
                 _inputService.BeginInjection();
                 try
                 {
                     if (charsToDelete > 0)
                     {
                         Win32TextInjection.SendBackspace(charsToDelete);
-                        Thread.Sleep(30); // Let target app process deletions
+                        Thread.Sleep(30);
                     }
+
                     Win32TextInjection.SendText(textToInsert + " ");
                     _inputService.ApplySuggestionInsertion(charsToDelete, textToInsert + " ");
-
-                    // Update context BEFORE getting new suggestions
-                    LearnAcceptedSuggestion(acceptedText, typedPartial, suggestion.Kind, charsToDelete);
+                    LearnAcceptedSuggestion(acceptedText, typedPartial, suggestionKind, charsToDelete);
                     _loggingService.Information($"Inserted: {acceptedText}");
 
-                    // Speak the word via queue (respects typing-speed gate)
                     if (_settingsService.Settings.Speech.EnableSpeechOnSelection &&
                         (_speakMode == SpeakMode.WordsOnly || _speakMode == SpeakMode.Both))
                     {
@@ -222,7 +308,6 @@ public class ApplicationService : IDisposable
                         _overlayService.ShowSpeakerIndicator(acceptedText);
                     }
 
-                    // Refresh word bank with next-word suggestions so user can chain picks
                     _hasValidTextInput = true;
                     UpdateSuggestions(string.Empty);
                 }
@@ -237,9 +322,8 @@ public class ApplicationService : IDisposable
             });
         };
 
-        // Handle paging
-        _inputService.NextPageKeyPressed += (s, e) => _overlayService.MoveToNextPage();
-        _inputService.PreviousPageKeyPressed += (s, e) => _overlayService.MoveToPreviousPage();
+        _inputService.NextPageKeyPressed += (_, _) => DeferWriterUi(() => _overlayService.MoveToNextPage());
+        _inputService.PreviousPageKeyPressed += (_, _) => DeferWriterUi(() => _overlayService.MoveToPreviousPage());
     }
 
     private string _currentWord = string.Empty;
@@ -256,7 +340,7 @@ public class ApplicationService : IDisposable
 
         _hasValidTextInput = true;
         _inputService.IsOverlayVisible = true;
-        UpdateSuggestions(_currentWord);
+        UpdateSuggestions(_inputService.GetCurrentWord());
         _focusCheckTimer.Start();
         _loggingService.Debug("Overlay shown - typing started");
     }
@@ -274,8 +358,12 @@ public class ApplicationService : IDisposable
         {
             _speechService.Stop();
             HideOverlay();
-            _currentWord = string.Empty;
-            _currentSuggestions = [];
+            lock (_writerStateLock)
+            {
+                _currentWord = string.Empty;
+                _currentSuggestions = [];
+            }
+
             _previousWord = string.Empty;
             _recentWords.Clear();
             _hasValidTextInput = false;
@@ -285,8 +373,12 @@ public class ApplicationService : IDisposable
         {
             _previousWord = string.Empty;
             _recentWords.Clear();
-            _currentWord = string.Empty;
-            _currentSuggestions = [];
+            lock (_writerStateLock)
+            {
+                _currentWord = string.Empty;
+                _currentSuggestions = [];
+            }
+
             _hasValidTextInput = false;
             _loggingService.Debug("Writer: left protected field — fresh prediction state");
         }
@@ -308,7 +400,12 @@ public class ApplicationService : IDisposable
                     _loggingService.Debug("Focus check: no text field focused for 1.5s - hiding overlay");
                     System.Windows.Application.Current?.Dispatcher.Invoke(() => HideOverlay());
                     _hasValidTextInput = false;
-                    _currentWord = string.Empty;
+                    lock (_writerStateLock)
+                    {
+                        _currentWord = string.Empty;
+                        _currentSuggestions = [];
+                    }
+
                     _focusLostCount = 0;
                 }
             }
@@ -337,12 +434,20 @@ public class ApplicationService : IDisposable
             return;
         }
 
-        _currentWord = text;
         var context = _inputService.GetSuggestionContextPrefix();
         var lastContextWord = context.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
-        var fullSentence = _inputService.GetFullSentenceForOverlay();
+        // Prefer live text from the focused control so the banner matches the real field (hook buffer can drift).
+        var fullSentence = Win32Caret.TryGetTextForOverlayContext(out var liveFieldText)
+            ? liveFieldText
+            : _inputService.GetFullSentenceForOverlay();
 
-        _currentSuggestions = _predictionService.GetSuggestions(context, text, _writerContext.GetSnapshot()).ToList();
+        List<SuggestionItem> suggestions;
+        lock (_writerStateLock)
+        {
+            _currentWord = text;
+            suggestions = _predictionService.GetSuggestions(context, text, _writerContext.GetSnapshot()).ToList();
+            _currentSuggestions = suggestions;
+        }
 
         string modeSummary;
         if (!string.IsNullOrWhiteSpace(text))
@@ -364,49 +469,58 @@ public class ApplicationService : IDisposable
             modeSummary,
             string.IsNullOrWhiteSpace(fullSentence) ? null : fullSentence);
 
-        _overlayService.ShowSuggestions(_currentSuggestions);
+        _overlayService.ShowSuggestions(suggestions);
     }
 
     private void OnSuggestionSelected(object? sender, int slot)
     {
         // Legacy path — kept for overlay click selection if ever added
-        var suggestion = _currentSuggestions.FirstOrDefault(s => s.Slot == slot);
-        if (suggestion != null)
+        SuggestionItem? suggestion;
+        int charsToDelete;
+        string typedPartial;
+        lock (_writerStateLock)
         {
-            var rawBeforePartial = _inputService.GetRawTextBeforeCurrentPartial();
-            var capOpts = WriterCapitalizationOptions.From(_settingsService.Settings.Writer);
-            var acceptedText = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText, capOpts);
-            var textToInsert = ResolveSuggestionInsertText(suggestion, acceptedText);
-            var charsToDelete = _currentWord?.Length ?? 0;
-            var typedPartial = _currentWord ?? string.Empty;
+            suggestion = _currentSuggestions.FirstOrDefault(s => s.Slot == slot);
+            if (suggestion == null)
+            {
+                return;
+            }
 
+            charsToDelete = _currentWord?.Length ?? 0;
+            typedPartial = _currentWord ?? string.Empty;
             _currentWord = string.Empty;
-            _inputService.ClearCurrentWord();
+            _currentSuggestions = [];
+        }
 
-            _inputService.BeginInjection();
-            try
+        _inputService.ClearCurrentWord();
+
+        var rawBeforePartial = _inputService.GetRawTextBeforeCurrentPartial();
+        var capOpts = WriterCapitalizationOptions.From(_settingsService.Settings.Writer);
+        var acceptedText = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText, capOpts);
+        var textToInsert = ResolveSuggestionInsertText(suggestion, acceptedText);
+
+        _inputService.BeginInjection();
+        try
+        {
+            if (charsToDelete > 0)
             {
-                if (charsToDelete > 0)
-                {
-                    Win32TextInjection.SendBackspace(charsToDelete);
-                }
-                Win32TextInjection.SendText(textToInsert + " ");
-                _inputService.ApplySuggestionInsertion(charsToDelete, textToInsert + " ");
-                LearnAcceptedSuggestion(acceptedText, typedPartial, suggestion.Kind, charsToDelete);
-                _loggingService.Information($"Inserted: {acceptedText}");
-                UpdateSuggestions(string.Empty);
+                Win32TextInjection.SendBackspace(charsToDelete);
             }
-            finally
-            {
-                _inputService.EndInjection();
-            }
+
+            Win32TextInjection.SendText(textToInsert + " ");
+            _inputService.ApplySuggestionInsertion(charsToDelete, textToInsert + " ");
+            LearnAcceptedSuggestion(acceptedText, typedPartial, suggestion.Kind, charsToDelete);
+            _loggingService.Information($"Inserted: {acceptedText}");
+            UpdateSuggestions(string.Empty);
+        }
+        finally
+        {
+            _inputService.EndInjection();
         }
     }
 
     private void RegisterHotkeyActions()
     {
-        _hotkeyService.RegisterAction("OpenModeMenu", OpenModeMenu);
-
         _hotkeyService.RegisterAction("VolumeUp", () =>
         {
             Win32Audio.VolumeUp();
@@ -432,15 +546,17 @@ public class ApplicationService : IDisposable
 
         _hotkeyService.RegisterAction("ToggleOverlay", () =>
         {
-            // Only show overlay if there's a text input focused
-            if (Win32Caret.GetCaretPosition(out var x, out var y) && (x != 0 || y != 0))
+            DeferWriterUi(() =>
             {
-                ShowOverlay();
-            }
-            else
-            {
-                _loggingService.Debug("ToggleOverlay hotkey pressed but no text input detected");
-            }
+                if (Win32Caret.GetCaretPosition(out var x, out var y) && (x != 0 || y != 0))
+                {
+                    ShowOverlay();
+                }
+                else
+                {
+                    _loggingService.Debug("ToggleOverlay hotkey pressed but no text input detected");
+                }
+            });
         });
 
         _hotkeyService.RegisterAction("PauseWriter", () =>
@@ -463,14 +579,24 @@ public class ApplicationService : IDisposable
         {
             FixClipboardSentenceCapitalization();
         });
+
+        _hotkeyService.RegisterAction("OpenModeMenu", ShowModeMenu);
+    }
+
+    private void ShowModeMenu()
+    {
+        DeferWriterUi(() =>
+        {
+            var w = new ModeMenuWindow(
+                () => _trayIconService.ShowSettings(null),
+                () => _trayIconService.ShowSettings(HotkeySettingsWindow.TabWordsPhrases));
+            w.ShowDialog();
+        });
     }
 
     private void RegisterDefaultHotkeys()
     {
         var settings = _settingsService.Settings.Hotkeys.Bindings;
-        var menuGesture = string.IsNullOrWhiteSpace(_settingsService.Settings.ModeSystem.MenuHotkeyGesture)
-            ? "Ctrl+F3"
-            : _settingsService.Settings.ModeSystem.MenuHotkeyGesture.Trim();
 
         if (settings.Count == 0)
         {
@@ -483,6 +609,7 @@ public class ApplicationService : IDisposable
             _hotkeyService.RegisterHotkey("AddToWordBank", "Ctrl+`");
             _hotkeyService.RegisterHotkey("AddPhraseToWordBank", "Ctrl+Shift+`");
             _hotkeyService.RegisterHotkey("FixClipboardCapitalization", "Ctrl+Shift+C");
+            _hotkeyService.RegisterHotkey("OpenModeMenu", _settingsService.Settings.ModeSystem.MenuHotkeyGesture, true);
 
             _loggingService.Information("Registered default hotkeys");
         }
@@ -490,12 +617,20 @@ public class ApplicationService : IDisposable
         {
             foreach (var binding in settings.Where(b => b.Enabled))
             {
-                _hotkeyService.RegisterHotkey(binding.ActionName, binding.Gesture);
+                var consume = string.Equals(binding.ActionName, "OpenModeMenu", StringComparison.OrdinalIgnoreCase);
+                _hotkeyService.RegisterHotkey(binding.ActionName, binding.Gesture, consume);
+            }
+
+            var menuDef = settings.FirstOrDefault(b =>
+                string.Equals(b.ActionName, "OpenModeMenu", StringComparison.OrdinalIgnoreCase));
+            if (menuDef == null)
+            {
+                _hotkeyService.RegisterHotkey(
+                    "OpenModeMenu",
+                    _settingsService.Settings.ModeSystem.MenuHotkeyGesture,
+                    true);
             }
         }
-
-        _hotkeyService.RegisterHotkey("OpenModeMenu", menuGesture, consumeMatchingKeys: true);
-        _loggingService.Information($"Mode menu hotkey registered: {menuGesture}");
     }
 
     private static readonly string[] AllHotkeyActionNames =
@@ -518,48 +653,52 @@ public class ApplicationService : IDisposable
 
     private string _previousWord = string.Empty;
 
-    private void OnWordTyped(WordTypedEventArgs e)
+    /// <summary>Runs on the keyboard hook thread — only SendInput + buffer fix; must stay synchronous.</summary>
+    private string ApplyWordCapitalizationInjectionIfNeeded(WordTypedEventArgs e)
     {
         var opts = WriterCapitalizationOptions.From(_settingsService.Settings.Writer);
         var word = e.Word;
-        if (opts.Enabled)
+        if (!opts.Enabled)
         {
-            var fixedWord = CapitalizationService.FixCompletedTypedWord(e.TextBeforeWord, e.Word, opts);
-            if (!string.Equals(fixedWord, e.Word, StringComparison.Ordinal))
-            {
-                _inputService.BeginInjection();
-                try
-                {
-                    Win32TextInjection.SendBackspace(e.Word.Length);
-                    Win32TextInjection.SendText(fixedWord);
-                    _inputService.ReplaceLastCompletedWord(e.Word, fixedWord);
-                    word = fixedWord;
-                }
-                catch (Exception ex)
-                {
-                    _loggingService.Warning($"Sentence capitalization fix failed: {ex.Message}");
-                }
-                finally
-                {
-                    _inputService.EndInjection();
-                }
-            }
+            return word;
         }
 
-        LearnWordOrPhrase(word);
+        var fixedWord = CapitalizationService.FixCompletedTypedWord(e.TextBeforeWord, e.Word, opts);
+        if (string.Equals(fixedWord, e.Word, StringComparison.Ordinal))
+        {
+            return word;
+        }
 
-        // Learn bigram: previous word → current word
+        _inputService.BeginInjection();
+        try
+        {
+            Win32TextInjection.SendBackspace(e.Word.Length);
+            Win32TextInjection.SendText(fixedWord);
+            _inputService.ReplaceLastCompletedWord(e.Word, fixedWord);
+            return fixedWord;
+        }
+        catch (Exception ex)
+        {
+            _loggingService.Warning($"Sentence capitalization fix failed: {ex.Message}");
+            return word;
+        }
+        finally
+        {
+            _inputService.EndInjection();
+        }
+    }
+
+    /// <summary>Runs on the WPF UI thread via <see cref="DeferWriterUi"/>.</summary>
+    private void OnWordTypedDeferred(string word, WordTypedEventArgs e)
+    {
+        LearnWordOrPhrase(word, bypassVocabularyGate: false);
+
         if (!string.IsNullOrWhiteSpace(_previousWord) && !string.IsNullOrWhiteSpace(word))
         {
             _predictionService.LearnBigram(_previousWord, word);
         }
 
         _learningEngine.OnWordCommitted(word, e.TextBeforeWord, _writerContext.GetSnapshot());
-
-        if (!_inputService.IsInProtectedField)
-        {
-            _typingModel.RecordWord(word, _writerContext.GetSnapshot());
-        }
 
         _previousWord = word.Trim().ToLowerInvariant();
 
@@ -633,7 +772,8 @@ public class ApplicationService : IDisposable
         {
             Win32TextInjection.SendText(inject);
             _inputService.AppendPastedPlainText(inject);
-            UpdateSuggestions(_inputService.GetCurrentWord());
+            var wAfter = _inputService.GetCurrentWord();
+            DeferWriterUi(() => UpdateSuggestions(wAfter));
         }
         catch (Exception ex)
         {
@@ -698,6 +838,8 @@ public class ApplicationService : IDisposable
         {
             _typingModel.RecordPhrase(normalized, _writerContext.GetSnapshot());
         }
+
+        QueueMongoVocabularyUpsert(normalized, isPhrase: true);
 
         // Sentence readback when mode is SentencesOnly or Both
         if (_speakMode == SpeakMode.SentencesOnly || _speakMode == SpeakMode.Both)
@@ -778,7 +920,7 @@ public class ApplicationService : IDisposable
         return new string(chars).ToLowerInvariant();
     }
 
-    private void LearnWordOrPhrase(string text)
+    private void LearnWordOrPhrase(string text, bool bypassVocabularyGate)
     {
         var normalized = text.Trim();
         if (string.IsNullOrWhiteSpace(normalized))
@@ -786,13 +928,112 @@ public class ApplicationService : IDisposable
             return;
         }
 
-        if (normalized.Contains(' '))
+        var isPhrase = normalized.Contains(' ', StringComparison.Ordinal);
+        var known = isPhrase
+            ? _predictionService.WordBankContainsPhrase(normalized)
+            : _predictionService.WordBankContainsWord(normalized);
+
+        if (known)
+        {
+            ApplyWordBankLearnInternal(normalized, isPhrase);
+            return;
+        }
+
+        if (bypassVocabularyGate || !IsAiVocabularyGateActive())
+        {
+            ApplyWordBankLearnInternal(normalized, isPhrase);
+            return;
+        }
+
+        var context = _inputService.GetSuggestionContextPrefix();
+        var gateKey = (isPhrase ? "P:" : "W:") + normalized;
+        // Shared task per key: concurrent completions before AI returns only trigger one HTTP call;
+        // frequency may under-count in that edge case until the next typed occurrence.
+        _ = _vocabGateTasks.GetOrAdd(
+            gateKey,
+            _ => RunVocabularyGateAndReleaseSlotAsync(normalized, isPhrase, context, gateKey));
+    }
+
+    private bool IsAiVocabularyGateActive() =>
+        _settingsService.Settings.Ai.EnableVocabularyGate &&
+        !string.IsNullOrWhiteSpace(_settingsService.Settings.Ai.ApiKey);
+
+    private void ApplyWordBankLearnInternal(string normalized, bool isPhrase)
+    {
+        if (isPhrase)
         {
             _predictionService.LearnPhrase(normalized);
         }
         else
         {
             _predictionService.LearnWord(normalized);
+        }
+
+        if (!_inputService.IsInProtectedField)
+        {
+            var snap = _writerContext.GetSnapshot();
+            if (isPhrase)
+            {
+                _typingModel.RecordPhrase(normalized, snap);
+            }
+            else
+            {
+                _typingModel.RecordWord(normalized, snap);
+            }
+        }
+
+        QueueMongoVocabularyUpsert(normalized, isPhrase);
+    }
+
+    /// <summary>When the writer learns a word/phrase locally, mirror to Mongo with the current sentence for context.</summary>
+    private void QueueMongoVocabularyUpsert(string normalized, bool isPhrase)
+    {
+        if (!_remoteVocabulary.IsEnabled || _inputService.IsInProtectedField)
+        {
+            return;
+        }
+
+        var sentence = _inputService.GetFullSentenceForOverlay();
+        var mode = _writerContext.GetSnapshot().Mode;
+        var vocab = _remoteVocabulary;
+        var log = _loggingService;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await vocab
+                    .UpsertAsync(normalized, isPhrase, sentence, mode, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Mongo vocabulary upsert: {ex.Message}");
+            }
+        });
+    }
+
+    private async Task<bool> RunVocabularyGateAndReleaseSlotAsync(
+        string normalized,
+        bool isPhrase,
+        string? context,
+        string gateKey)
+    {
+        try
+        {
+            var ok = await _aiVocabGate
+                .ShouldRememberNewItemAsync(normalized, isPhrase, context, CancellationToken.None)
+                .ConfigureAwait(false);
+            if (ok)
+            {
+                // PredictionService / TypingModel are thread-safe; no WPF touch here.
+                ApplyWordBankLearnInternal(normalized, isPhrase);
+            }
+
+            return ok;
+        }
+        finally
+        {
+            _vocabGateTasks.TryRemove(gateKey, out _);
         }
     }
 
@@ -829,43 +1070,65 @@ public class ApplicationService : IDisposable
 
     private void AddCurrentTypingToWordBank()
     {
-        if (_inputService.IsInProtectedField)
-        {
-            _loggingService.Debug("AddToWordBank skipped: protected field");
-            return;
-        }
-
-        var candidate = !string.IsNullOrWhiteSpace(_currentWord)
-            ? _currentWord
-            : _inputService.GetCurrentWord();
-
-        if (string.IsNullOrWhiteSpace(candidate))
+        if (!TryMenuAddCurrentWord())
         {
             _loggingService.Information("AddToWordBank requested but there is no current word");
-            return;
         }
-
-        LearnWordOrPhrase(candidate);
-        _loggingService.Information($"Added to word bank: {candidate}");
     }
 
     private void AddCurrentPhraseToWordBank()
     {
+        if (!TryMenuAddCurrentPhrase())
+        {
+            _loggingService.Information("AddPhraseToWordBank requested but there is no current phrase context");
+        }
+    }
+
+    private bool TryMenuAddCurrentWord()
+    {
+        if (_inputService.IsInProtectedField)
+        {
+            _loggingService.Debug("AddToWordBank skipped: protected field");
+            return false;
+        }
+
+        string cw;
+        lock (_writerStateLock)
+        {
+            cw = _currentWord;
+        }
+
+        var candidate = !string.IsNullOrWhiteSpace(cw)
+            ? cw
+            : _inputService.GetCurrentWord();
+
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return false;
+        }
+
+        LearnWordOrPhrase(candidate, bypassVocabularyGate: true);
+        _loggingService.Information($"Added to word bank: {candidate}");
+        return true;
+    }
+
+    private bool TryMenuAddCurrentPhrase()
+    {
         if (_inputService.IsInProtectedField)
         {
             _loggingService.Debug("AddPhraseToWordBank skipped: protected field");
-            return;
+            return false;
         }
 
         var phrase = _inputService.GetFullSentenceForOverlay().Trim();
         if (string.IsNullOrWhiteSpace(phrase))
         {
-            _loggingService.Information("AddPhraseToWordBank requested but there is no current phrase context");
-            return;
+            return false;
         }
 
-        _predictionService.LearnPhrase(phrase);
+        LearnWordOrPhrase(phrase, bypassVocabularyGate: true);
         _loggingService.Information($"Added phrase to word bank: {phrase}");
+        return true;
     }
 
     private void ApplyApplicationMode(AppMode _)
@@ -874,50 +1137,60 @@ public class ApplicationService : IDisposable
         _inputService.IsEnabled = true;
     }
 
-    private void OpenModeMenu()
+    private void OpenChat()
     {
-        _loggingService.Information("Mode menu opened (global shortcut)");
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher == null)
+        _loggingService.Information("Opening AI Chat window");
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
         {
-            return;
-        }
+            if (_chatWindow != null && _chatWindow.IsVisible)
+            {
+                _chatWindow.Activate();
+                return;
+            }
 
-        // Let digits, Esc, etc. reach the WPF menu instead of overlay / writer handlers.
-        _inputService.SuspendWriterKeyHandling = true;
-        dispatcher.BeginInvoke(() =>
-        {
-            ModeMenuWindow? menu = null;
-            try
-            {
-                menu = new ModeMenuWindow(_modeManager, _trayIconService.ShowSettings, _loggingService, ShowModeFeedback);
-                _inputService.ModeMenuKeySink = menu;
-                menu.ShowDialog();
-            }
-            catch (Exception ex)
-            {
-                _loggingService.Warning($"Mode menu error: {ex.Message}");
-            }
-            finally
-            {
-                _inputService.ModeMenuKeySink = null;
-                _inputService.SuspendWriterKeyHandling = false;
-            }
-        }, System.Windows.Threading.DispatcherPriority.Send);
+            var vm = new ChatViewModel(_chatService, _conversationStore, _chatOptions, _loggingService);
+            vm.SetOpenSettingsAction(() => OpenChatSettings(vm));
+            _chatWindow = new ChatWindow(vm);
+            _chatWindow.Closed += (_, _) => _chatWindow = null;
+            _chatWindow.Show();
+        });
     }
 
-    private void ShowModeFeedback(string headline)
+    private void OpenChatSettings(ChatViewModel chatVm)
     {
-        var ms = _settingsService.Settings.ModeSystem;
-        if (ms.ShowModeToast)
+        var settingsVm = new ChatSettingsViewModel(_chatService, _chatOptions, _loggingService, () =>
         {
-            ModeToastWindow.ShowBrief(headline);
-        }
+            // Persist all chat fields to app settings after Save
+            var ai = _settingsService.Settings.Ai;
+            ai.ApiBaseUrl = _chatOptions.BaseUrl;
+            ai.ApiKey = _chatOptions.ApiKey;
+            ai.Model = _chatOptions.Model;
+            ai.ChatUseStreaming = _chatOptions.UseStreaming;
+            ai.ChatTemperature = _chatOptions.Temperature;
+            ai.ChatTimeoutSeconds = _chatOptions.TimeoutSeconds;
+            ai.ChatSystemPrompt = _chatOptions.DefaultSystemPrompt;
+            _settingsService.Save();
+            _loggingService.Information("[ChatSettings] Persisted to app settings");
+        });
+        var settingsWindow = new ChatSettingsWindow(settingsVm);
+        if (_chatWindow != null)
+            settingsWindow.Owner = _chatWindow;
+        settingsWindow.ShowDialog();
+    }
 
-        if (ms.SpeakModeChange)
+    private ChatOptions LoadChatOptions()
+    {
+        var ai = _settingsService.Settings.Ai;
+        return new ChatOptions
         {
-            _speechService.Speak(headline);
-        }
+            BaseUrl = ai.ApiBaseUrl ?? "https://api.openai.com/v1",
+            ApiKey = ai.ApiKey ?? "",
+            Model = ai.Model ?? "gpt-4o-mini",
+            UseStreaming = ai.ChatUseStreaming,
+            Temperature = ai.ChatTemperature,
+            TimeoutSeconds = ai.ChatTimeoutSeconds,
+            DefaultSystemPrompt = ai.ChatSystemPrompt,
+        };
     }
 
     public void Dispose()
@@ -942,6 +1215,12 @@ public class ApplicationService : IDisposable
         {
             speechDisposable.Dispose();
         }
+        if (_chatService is IDisposable chatDisposable)
+        {
+            chatDisposable.Dispose();
+        }
+
+        _aiVocabGate.Dispose();
         _loggingService.Information("Application shutdown");
     }
 }

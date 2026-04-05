@@ -1,0 +1,249 @@
+<UserControl x:Class="WindowsHelperSuite.App.WordsPhrasesSettingsPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#0F0F1A">
+    <UserControl.Resources>
+        <!-- Pill-style sub-tab -->
+        <Style x:Key="SubTab" TargetType="TabItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#7A7AA8"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="16,8"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Bd" Background="Transparent"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}"
+                                BorderThickness="1" BorderBrush="Transparent">
+                            <ContentPresenter ContentSource="Header"
+                                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1E1E38"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#3A3A6E"/>
+                                <Setter Property="Foreground" Value="#EEEEFF"/>
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsSelected" Value="False"/>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="Bd" Property="Background" Value="#14142A"/>
+                                <Setter Property="Foreground" Value="#B0B0D0"/>
+                            </MultiTrigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Add button -->
+        <Style x:Key="AddBtn" TargetType="Button">
+            <Setter Property="Padding" Value="14,7"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#3A3A9E" Offset="0"/>
+                                    <GradientStop Color="#5252C0" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                            <GradientStop Color="#4A4AB8" Offset="0"/>
+                                            <GradientStop Color="#6262D8" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background">
+                                    <Setter.Value>
+                                        <SolidColorBrush Color="#2A2A80"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Import/Export button -->
+        <Style x:Key="SecondaryBtn" TargetType="Button">
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="Foreground" Value="#C8C8E8"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="8" Padding="{TemplateBinding Padding}"
+                                Background="#1E1E38" BorderThickness="1" BorderBrush="#2E2E52">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#282848"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#4A4A78"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#161630"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Danger button -->
+        <Style x:Key="DangerBtn" TargetType="Button">
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="Foreground" Value="#E8B8D8"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="8" Padding="{TemplateBinding Padding}"
+                                Background="#2E1A2A" BorderThickness="1" BorderBrush="#4A2A3E">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#3A2240"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#6A3A58"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#1E1220"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <TabControl Background="#0F0F1A" BorderThickness="0" Margin="0,6,0,0">
+        <TabControl.Resources>
+            <Style TargetType="TabItem" BasedOn="{StaticResource SubTab}"/>
+        </TabControl.Resources>
+        <TabItem Header="Words">
+            <DockPanel Margin="12,12,12,8">
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="AddWordBtn" Content="＋  Add word" Click="AddWordBtn_Click"
+                            Style="{StaticResource AddBtn}"/>
+                    <Border Grid.Column="1" Background="#16162C" CornerRadius="8"
+                            BorderThickness="1" BorderBrush="#2A2A4A" Margin="12,0,0,0"
+                            Padding="10,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="🔍" FontSize="13" VerticalAlignment="Center"
+                                       Foreground="#55558A" Margin="0,0,8,0"/>
+                            <TextBox x:Name="WordSearchBox" Grid.Column="1" Padding="4,6"
+                                     Background="Transparent" Foreground="#E8E8F0"
+                                     BorderThickness="0" CaretBrush="#A8A8E8"
+                                     FontSize="13" VerticalContentAlignment="Center"
+                                     TextChanged="WordSearchBox_TextChanged">
+                                <TextBox.Style>
+                                    <Style TargetType="TextBox">
+                                        <Setter Property="Foreground" Value="#E8E8F0"/>
+                                    </Style>
+                                </TextBox.Style>
+                            </TextBox>
+                        </Grid>
+                    </Border>
+                </Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="WordsHost"/>
+                </ScrollViewer>
+            </DockPanel>
+        </TabItem>
+        <TabItem Header="Phrases">
+            <DockPanel Margin="12,12,12,8">
+                <Grid DockPanel.Dock="Top" Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="AddPhraseBtn" Content="＋  Add phrase" Click="AddPhraseBtn_Click"
+                            Style="{StaticResource AddBtn}"/>
+                    <Border Grid.Column="1" Background="#16162C" CornerRadius="8"
+                            BorderThickness="1" BorderBrush="#2A2A4A" Margin="12,0,0,0"
+                            Padding="10,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="🔍" FontSize="13" VerticalAlignment="Center"
+                                       Foreground="#55558A" Margin="0,0,8,0"/>
+                            <TextBox x:Name="PhraseSearchBox" Grid.Column="1" Padding="4,6"
+                                     Background="Transparent" Foreground="#E8E8F0"
+                                     BorderThickness="0" CaretBrush="#A8A8E8"
+                                     FontSize="13" VerticalContentAlignment="Center"
+                                     TextChanged="PhraseSearchBox_TextChanged">
+                                <TextBox.Style>
+                                    <Style TargetType="TextBox">
+                                        <Setter Property="Foreground" Value="#E8E8F0"/>
+                                    </Style>
+                                </TextBox.Style>
+                            </TextBox>
+                        </Grid>
+                    </Border>
+                </Grid>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="PhrasesHost"/>
+                </ScrollViewer>
+            </DockPanel>
+        </TabItem>
+        <TabItem Header="Import / Export &amp; defaults">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="20,18,20,16">
+                    <TextBlock Text="BACKUP" FontSize="11" FontWeight="SemiBold" Foreground="#6A6A92" Margin="0,0,0,12"/>
+                    <TextBlock Text="Export or import your word and phrase lists as JSON files for backup or sharing."
+                               Foreground="#8888AA" TextWrapping="Wrap" Margin="0,0,0,14" FontSize="13"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,24">
+                        <Button Content="📤  Export words &amp; phrases" Click="Export_Click"
+                                Style="{StaticResource SecondaryBtn}" Margin="0,0,10,0"/>
+                        <Button Content="📥  Import words &amp; phrases" Click="Import_Click"
+                                Style="{StaticResource SecondaryBtn}"/>
+                    </StackPanel>
+
+                    <Border Background="#2A2A44" Height="1" Margin="0,0,0,24"/>
+
+                    <TextBlock Text="RESET" FontSize="11" FontWeight="SemiBold" Foreground="#6A6A92" Margin="0,0,0,12"/>
+                    <TextBlock Text="Replace all words and phrases with the app default starter lists (Hello, Yes, No, Thanks, Help, ...)."
+                               Foreground="#8888AA" TextWrapping="Wrap" Margin="0,0,0,14" FontSize="13"/>
+                    <Button Content="⚠  Reset words &amp; phrases to defaults" Click="ResetFactory_Click"
+                            Style="{StaticResource DangerBtn}" HorizontalAlignment="Left"/>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+    </TabControl>
+</UserControl>

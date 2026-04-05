@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
 
 namespace WindowsHelperSuite.Infrastructure.Hooks;
 
@@ -40,24 +39,16 @@ public static class Win32TextInjection
     private const uint KEYEVENTF_KEYUP = 0x0002;
     private const uint KEYEVENTF_UNICODE = 0x0004;
     private const ushort VK_BACK = 0x08;
-    private const ushort VK_CONTROL = 0x11;
-    private const ushort VK_V = 0x56;
 
     /// <summary>
-    /// Sends text to the currently focused window.
-    /// Tries clipboard paste first, falls back to Unicode keystrokes.
+    /// Sends text to the currently focused window via Unicode keystrokes only.
+    /// Does not use the clipboard (clipboard-based paste left injected text behind when the clipboard was empty).
     /// </summary>
     public static void SendText(string text)
     {
         if (string.IsNullOrEmpty(text))
             return;
 
-        // Try clipboard paste (fast for multi-character text)
-        if (TryClipboardPaste(text))
-            return;
-
-        // Fallback: type each character as a Unicode keystroke
-        System.Diagnostics.Debug.WriteLine($"Clipboard paste failed, using Unicode keystrokes for: \"{text}\"");
         SendUnicodeChars(text);
     }
 
@@ -70,61 +61,6 @@ public static class Win32TextInjection
         {
             SendKeyPress(VK_BACK);
             Thread.Sleep(10);
-        }
-    }
-
-    private static bool TryClipboardPaste(string text)
-    {
-        try
-        {
-            // Save current clipboard
-            string? saved = null;
-            try { saved = Clipboard.ContainsText() ? Clipboard.GetText() : null; } catch { }
-
-            // Try to set clipboard text with retries
-            for (int i = 0; i < 5; i++)
-            {
-                try
-                {
-                    Clipboard.SetText(text, TextDataFormat.UnicodeText);
-
-                    // Verify it was set correctly
-                    var check = Clipboard.GetText();
-                    if (check == text)
-                    {
-                        // Send Ctrl+V
-                        Thread.Sleep(20);
-                        SendCtrlV();
-
-                        // Restore clipboard after a delay so the target app has
-                        // time to process the paste before the content changes back.
-                        if (saved != null)
-                        {
-                            var capturedSaved = saved;
-                            var staThread = new Thread(() =>
-                            {
-                                Thread.Sleep(500);
-                                try { Clipboard.SetText(capturedSaved, TextDataFormat.UnicodeText); } catch { }
-                            });
-                            staThread.SetApartmentState(ApartmentState.STA);
-                            staThread.IsBackground = true;
-                            staThread.Start();
-                        }
-
-                        return true;
-                    }
-                }
-                catch { }
-                Thread.Sleep(30);
-            }
-
-            System.Diagnostics.Debug.WriteLine("Clipboard paste: all attempts failed");
-            return false;
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Clipboard paste exception: {ex.Message}");
-            return false;
         }
     }
 
@@ -147,16 +83,6 @@ public static class Win32TextInjection
         inputs[0] = MakeKeyInput(vk, 0);
         inputs[1] = MakeKeyInput(vk, KEYEVENTF_KEYUP);
         SendInput(2, inputs, Marshal.SizeOf<INPUT>());
-    }
-
-    private static void SendCtrlV()
-    {
-        var inputs = new INPUT[4];
-        inputs[0] = MakeKeyInput(VK_CONTROL, 0);
-        inputs[1] = MakeKeyInput(VK_V, 0);
-        inputs[2] = MakeKeyInput(VK_V, KEYEVENTF_KEYUP);
-        inputs[3] = MakeKeyInput(VK_CONTROL, KEYEVENTF_KEYUP);
-        SendInput(4, inputs, Marshal.SizeOf<INPUT>());
     }
 
     private static INPUT MakeKeyInput(ushort vk, uint flags)

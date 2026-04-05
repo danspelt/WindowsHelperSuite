@@ -222,4 +222,137 @@ public static class Win32Caret
             return false;
         }
     }
+
+    /// <summary>
+    /// Reads text from the focused editable control (UIA) for overlay context — matches what the user sees,
+    /// unlike the keyboard-hook buffer which can drift after paste, autocorrect, or caret moves.
+    /// </summary>
+    public static bool TryGetTextForOverlayContext(out string text, int maxLength = 720)
+    {
+        text = string.Empty;
+        try
+        {
+            var el = AutomationElement.FocusedElement;
+            if (el == null)
+            {
+                return false;
+            }
+
+            if (TryGetOverlayTextViaTextPattern(el, maxLength, out text))
+            {
+                return true;
+            }
+
+            if (TryGetOverlayTextViaValuePattern(el, maxLength, out text))
+            {
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+
+        return false;
+    }
+
+    private static bool TryGetOverlayTextViaTextPattern(AutomationElement el, int maxLength, out string text)
+    {
+        text = string.Empty;
+        try
+        {
+            if (!el.TryGetCurrentPattern(TextPattern.Pattern, out var tpObj) || tpObj is not TextPattern textPattern)
+            {
+                return false;
+            }
+
+            // Prefer the current line (caret row). TextUnit is not always in compile scope for net8+WPF; Line = 3.
+            var selection = textPattern.GetSelection();
+            if (selection != null && selection.Length > 0)
+            {
+                try
+                {
+                    var range = selection[0].Clone();
+                    range.ExpandToEnclosingUnit((dynamic)(object)3);
+                    var line = range.GetText(-1);
+                    if (!string.IsNullOrWhiteSpace(line))
+                    {
+                        text = TruncateOverlayTail(NormalizeOverlayWhitespace(line), maxLength);
+                        return true;
+                    }
+                }
+                catch
+                {
+                    // Line/sentence expansion not supported — fall through to full document text.
+                }
+            }
+
+            var full = textPattern.DocumentRange.GetText(-1);
+            if (!string.IsNullOrWhiteSpace(full))
+            {
+                text = TruncateOverlayTail(NormalizeOverlayWhitespace(full), maxLength);
+                return true;
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+
+        return false;
+    }
+
+    private static bool TryGetOverlayTextViaValuePattern(AutomationElement el, int maxLength, out string text)
+    {
+        text = string.Empty;
+        try
+        {
+            if (!el.TryGetCurrentPattern(ValuePattern.Pattern, out var vpObj) || vpObj is not ValuePattern valuePattern)
+            {
+                return false;
+            }
+
+            if (valuePattern.Current.IsReadOnly)
+            {
+                return false;
+            }
+
+            var v = valuePattern.Current.Value;
+            if (string.IsNullOrWhiteSpace(v))
+            {
+                return false;
+            }
+
+            text = TruncateOverlayTail(NormalizeOverlayWhitespace(v), maxLength);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Keep overlay text close to what the control shows — do not collapse spaces or join words.
+    /// </summary>
+    private static string NormalizeOverlayWhitespace(string s)
+    {
+        if (string.IsNullOrEmpty(s))
+        {
+            return string.Empty;
+        }
+
+        return s.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Trim();
+    }
+
+    /// <summary>Show the end of long text (caret is usually near the end).</summary>
+    private static string TruncateOverlayTail(string s, int maxLength)
+    {
+        if (string.IsNullOrEmpty(s) || s.Length <= maxLength)
+        {
+            return s;
+        }
+
+        return "…" + s[^maxLength..].TrimStart();
+    }
 }

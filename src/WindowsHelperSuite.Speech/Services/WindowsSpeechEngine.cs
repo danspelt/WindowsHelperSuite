@@ -86,21 +86,52 @@ internal sealed class WindowsSpeechEngine : IDisposable
         try
         {
             using var probe = new SpeechSynthesizer();
-            var voices = probe.GetInstalledVoices();
-            var best = voices
+            var voices = probe.GetInstalledVoices()
                 .Where(v => v.Enabled)
                 .Select(v => v.VoiceInfo)
-                .OrderByDescending(v => v.Culture.Name.Equals("en-US", StringComparison.OrdinalIgnoreCase))
-                .ThenByDescending(v => v.Culture.Name.Equals("en-CA", StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(OfflineVoiceQualityScore)
                 .ThenBy(v => v.Name, StringComparer.OrdinalIgnoreCase)
                 .FirstOrDefault();
 
-            return best?.Name;
+            return voices?.Name;
         }
         catch
         {
             return null;
         }
+    }
+
+    /// <summary>Prefer en-US, then other English, then voices that advertise neural/natural in the name.</summary>
+    private static int OfflineVoiceQualityScore(VoiceInfo v)
+    {
+        var score = 0;
+        var c = v.Culture.Name;
+        if (c.Equals("en-US", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 200;
+        }
+        else if (c.Equals("en-CA", StringComparison.OrdinalIgnoreCase) ||
+                 c.Equals("en-GB", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 150;
+        }
+        else if (c.StartsWith("en-", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 100;
+        }
+
+        var n = v.Name;
+        if (n.Contains("Neural", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 80;
+        }
+
+        if (n.Contains("Natural", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 50;
+        }
+
+        return score;
     }
 
     public void Dispose()

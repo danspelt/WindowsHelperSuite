@@ -65,11 +65,6 @@ public class PredictionService : IPredictionService, IDisposable
 
         lock (_syncRoot)
         {
-            if (writerContext.Mode == WriterTypingMode.Development)
-            {
-                return [];
-            }
-
             var suggestions = new List<SuggestionCandidate>();
 
             if (!string.IsNullOrWhiteSpace(normalizedWord))
@@ -321,6 +316,34 @@ public class PredictionService : IPredictionService, IDisposable
         }
     }
 
+    public bool WordBankContainsWord(string word)
+    {
+        var normalizedWord = NormalizeWord(word);
+        if (normalizedWord.Length <= 1)
+        {
+            return false;
+        }
+
+        lock (_syncRoot)
+        {
+            return _wordIndex.ContainsKey(normalizedWord);
+        }
+    }
+
+    public bool WordBankContainsPhrase(string phrase)
+    {
+        var normalizedPhrase = NormalizePhrase(phrase);
+        if (string.IsNullOrWhiteSpace(normalizedPhrase) || !normalizedPhrase.Contains(' '))
+        {
+            return false;
+        }
+
+        lock (_syncRoot)
+        {
+            return _phraseIndex.ContainsKey(normalizedPhrase);
+        }
+    }
+
     public void LearnWord(string word)
     {
         var normalizedWord = NormalizeWord(word);
@@ -488,13 +511,45 @@ public class PredictionService : IPredictionService, IDisposable
             return new WordBankStore();
         }
 
-        var json = File.ReadAllText(_storagePath);
-        if (string.IsNullOrWhiteSpace(json))
+        try
+        {
+            var json = File.ReadAllText(_storagePath);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return new WordBankStore();
+            }
+
+            return JsonSerializer.Deserialize<WordBankStore>(json, _jsonOptions) ?? new WordBankStore();
+        }
+        catch (JsonException)
+        {
+            TryBackupCorruptWordBank(_storagePath);
+            return new WordBankStore();
+        }
+        catch (IOException)
         {
             return new WordBankStore();
         }
+    }
 
-        return JsonSerializer.Deserialize<WordBankStore>(json, _jsonOptions) ?? new WordBankStore();
+    private static void TryBackupCorruptWordBank(string path)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(path);
+            if (string.IsNullOrEmpty(dir))
+            {
+                return;
+            }
+
+            var name = Path.GetFileNameWithoutExtension(path);
+            var dest = Path.Combine(dir, $"{name}.corrupt.{DateTime.UtcNow:yyyyMMddHHmmss}.json");
+            File.Copy(path, dest, overwrite: false);
+        }
+        catch
+        {
+            // best-effort backup only
+        }
     }
 
     /// <summary>Merges optional %AppData%/WindowsHelperSuite/data/corrections.json into the in-memory store (same shape as <see cref="CorrectionsFile"/>).</summary>

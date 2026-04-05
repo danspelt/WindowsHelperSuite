@@ -1,5 +1,5 @@
-using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
 using WindowsHelperSuite.Infrastructure.Hooks;
 using WindowsHelperSuite.Core.Interfaces;
@@ -11,10 +11,13 @@ public class KeyboardHookService : IDisposable
     private IntPtr _hookId = IntPtr.Zero;
     private Win32KeyboardHook.LowLevelKeyboardProc? _hookCallback;
     private readonly Dictionary<string, (uint keyCode, bool ctrl, bool alt, bool shift, bool consumeKeys)> _registeredHotkeys = [];
-    private long _lastOpenModeMenuTick;
     private readonly HashSet<uint> _pressedKeys = [];
     private readonly HashSet<uint> _suppressedKeys = []; // Track keys whose key-UP should also be eaten
     private readonly ILoggingService _loggingService;
+    private readonly object _hookThreadLock = new();
+    private Thread? _pumpThread;
+    private uint _pumpNativeThreadId;
+    private readonly ManualResetEventSlim _hookInstallDone = new(false);
 
     public event EventHandler<string>? HotkeyPressed;
     public event EventHandler<KeyEventArgs>? KeyPressed;
@@ -26,19 +29,110 @@ public class KeyboardHookService : IDisposable
 
     public void StartHook()
     {
-        if (_hookId != IntPtr.Zero) return;
+        lock (_hookThreadLock)
+        {
+            if (_pumpThread is { IsAlive: true })
+            {
+                return;
+            }
 
-        _hookCallback = HookCallback;
-        _hookId = SetHook(_hookCallback);
+            _hookInstallDone.Reset();
+            _pumpThread = new Thread(HookPumpProc)
+            {
+                IsBackground = true,
+                Name = "WindowsHelperSuite.KeyboardHook"
+            };
+            _pumpThread.SetApartmentState(ApartmentState.STA);
+            _pumpThread.Start();
+
+            if (!_hookInstallDone.Wait(TimeSpan.FromSeconds(10)))
+            {
+                _loggingService.Warning("Keyboard hook thread did not finish installing within 10 seconds.");
+            }
+        }
     }
 
     public void StopHook()
     {
+        lock (_hookThreadLock)
+        {
+            if (_pumpThread is not { IsAlive: true })
+            {
+                _hookId = IntPtr.Zero;
+                _hookCallback = null;
+                _pumpThread = null;
+                _pumpNativeThreadId = 0;
+                return;
+            }
+
+            if (_pumpNativeThreadId != 0)
+            {
+                Win32KeyboardHook.PostThreadMessage(_pumpNativeThreadId, Win32KeyboardHook.WM_QUIT, 0, 0);
+            }
+
+            if (!_pumpThread.Join(TimeSpan.FromSeconds(5)))
+            {
+                _loggingService.Warning("Keyboard hook thread did not exit cleanly.");
+            }
+
+            _pumpThread = null;
+            _pumpNativeThreadId = 0;
+            _hookId = IntPtr.Zero;
+            _hookCallback = null;
+        }
+    }
+
+    /// <summary>
+    /// WH_KEYBOARD_LL must not run on the WPF UI thread: blocking there during key processing freezes the
+    /// message pump, trips the low-level hook timeout, and crashes while typing.
+    /// </summary>
+    private void HookPumpProc()
+    {
+        _pumpNativeThreadId = Win32KeyboardHook.GetCurrentThreadId();
+
+        try
+        {
+            _hookCallback = HookCallback;
+            _hookId = SetHook(_hookCallback);
+            if (_hookId == IntPtr.Zero)
+            {
+                var err = Marshal.GetLastWin32Error();
+                _loggingService.Warning(
+                    $"Keyboard hook failed to install (Win32 error {err}). Writer and global hotkeys are disabled.");
+                _hookCallback = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _loggingService.Warning($"Keyboard hook failed: {ex.Message}");
+            _hookCallback = null;
+            _hookId = IntPtr.Zero;
+        }
+        finally
+        {
+            _hookInstallDone.Set();
+        }
+
+        Win32KeyboardHook.MSG msg;
+        int gm;
+        while ((gm = Win32KeyboardHook.GetMessage(out msg, 0, 0, 0)) != 0)
+        {
+            if (gm == -1)
+            {
+                break;
+            }
+
+            Win32KeyboardHook.TranslateMessage(ref msg);
+            Win32KeyboardHook.DispatchMessage(ref msg);
+        }
+
         if (_hookId != IntPtr.Zero)
         {
             Win32KeyboardHook.UnhookWindowsHookEx(_hookId);
             _hookId = IntPtr.Zero;
         }
+
+        _hookCallback = null;
     }
 
     public void RegisterHotkey(string actionName, string gesture, bool consumeMatchingKeys = false)
@@ -54,16 +148,12 @@ public class KeyboardHookService : IDisposable
 
     private static IntPtr SetHook(Win32KeyboardHook.LowLevelKeyboardProc proc)
     {
-        using var curProcess = System.Diagnostics.Process.GetCurrentProcess();
-        using var curModule = curProcess.MainModule;
-
-        if (curModule?.ModuleName == null)
-            throw new Win32Exception("Could not get module name");
-
+        // Do not use Process.MainModule — it throws on some hosts (permissions, single-file, tooling).
+        var hMod = Win32KeyboardHook.GetModuleHandle(null);
         return Win32KeyboardHook.SetWindowsHookEx(
             Win32KeyboardHook.WH_KEYBOARD_LL,
             proc,
-            Win32KeyboardHook.GetModuleHandle(curModule.ModuleName),
+            hMod,
             0);
     }
 
@@ -146,17 +236,6 @@ public class KeyboardHookService : IDisposable
             if (ctrl != ctrlPressed || alt != altPressed || shift != shiftPressed)
             {
                 continue;
-            }
-
-            if (string.Equals(actionName, "OpenModeMenu", StringComparison.Ordinal))
-            {
-                var now = Environment.TickCount64;
-                if (now - _lastOpenModeMenuTick < 500)
-                {
-                    continue;
-                }
-
-                _lastOpenModeMenuTick = now;
             }
 
             HotkeyPressed?.Invoke(this, actionName);
@@ -250,6 +329,7 @@ public class KeyboardHookService : IDisposable
     public void Dispose()
     {
         StopHook();
+        _hookInstallDone.Dispose();
         GC.SuppressFinalize(this);
     }
 }

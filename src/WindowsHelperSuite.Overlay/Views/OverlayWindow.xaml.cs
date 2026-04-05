@@ -16,9 +16,9 @@ public partial class OverlayWindow : Window
     private OverlayLayout? _lockedLayout = null; // Prevents flipping while typing
     private DateTime _layoutLockTime = DateTime.MinValue;
     private readonly TimeSpan _layoutLockDuration = TimeSpan.FromSeconds(30); // Lock layout for 30s after typing starts
-    private static readonly Duration OverlayRefreshDuration = new(TimeSpan.FromMilliseconds(90));
-    private static readonly Duration SuggestionFadeDuration = new(TimeSpan.FromMilliseconds(85));
-    private static readonly Duration SuggestionSlideDuration = new(TimeSpan.FromMilliseconds(90));
+    private static readonly Duration OverlayRefreshDuration = new(TimeSpan.FromMilliseconds(100));
+    private static readonly Duration SuggestionFadeDuration = new(TimeSpan.FromMilliseconds(100));
+    private static readonly Duration SuggestionSlideDuration = new(TimeSpan.FromMilliseconds(115));
 
     public event EventHandler<int>? SuggestionSelected;
     public event EventHandler? NextPageRequested;
@@ -66,7 +66,10 @@ public partial class OverlayWindow : Window
             if (wasHidden)
             {
                 Opacity = 0;
-                var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(80));
+                var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(110))
+                {
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                };
                 BeginAnimation(OpacityProperty, fadeIn);
                 AnimateOverlayRefresh();
             }
@@ -240,7 +243,7 @@ public partial class OverlayWindow : Window
         {
             Orientation = Orientation.Vertical,
             VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 220 : 320
+            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 248 : 360
         };
 
         var textBlock = new TextBlock
@@ -252,7 +255,7 @@ public partial class OverlayWindow : Window
             Foreground = (Brush)FindResource("TextPrimary"),
             VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
-            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 220 : 320
+            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 248 : 360
         };
 
         textPanel.Children.Add(textBlock);
@@ -277,17 +280,18 @@ public partial class OverlayWindow : Window
             Tag = suggestion.Slot,
             Style = (Style)FindResource("SuggestionButtonStyle"),
             Opacity = 0,
-            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 280 : 420,
+            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 300 : 440,
+            ToolTip = BuildSuggestionToolTip(suggestion),
             Margin = _currentLayout == OverlayLayout.Horizontal
-                ? new Thickness(3, 0, 3, 0)
-                : new Thickness(0, 3, 0, 3)
+                ? new Thickness(4, 0, 4, 0)
+                : new Thickness(0, 4, 0, 4)
         };
 
         button.RenderTransformOrigin = new Point(0.5, 0.5);
         button.RenderTransform = new TranslateTransform
         {
-            X = _currentLayout == OverlayLayout.Horizontal ? 8 : 0,
-            Y = _currentLayout == OverlayLayout.Vertical ? 8 : 0
+            X = _currentLayout == OverlayLayout.Horizontal ? 12 : 0,
+            Y = _currentLayout == OverlayLayout.Vertical ? 12 : 0
         };
 
         button.Click += (s, e) =>
@@ -326,7 +330,10 @@ public partial class OverlayWindow : Window
                     var flash = new ColorAnimation(
                         Color.FromRgb(0x4A, 0xDE, 0x80), // AccentGreen
                         Color.FromRgb(0x1E, 0x1F, 0x2A), // Back to CardBackground
-                        TimeSpan.FromMilliseconds(90));
+                        TimeSpan.FromMilliseconds(120))
+                    {
+                        EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+                    };
                     border.Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x1F, 0x2A));
                     ((SolidColorBrush)border.Background).BeginAnimation(SolidColorBrush.ColorProperty, flash);
                 }
@@ -460,7 +467,8 @@ public partial class OverlayWindow : Window
         ApplyColorResource("AccentGreenDim", DimColor(accentColor, 0.35));
         ApplyColorResource("PrimaryBackground", bgColor);
         ApplyColorResource("CardBackground", cardColor);
-        ApplyColorResource("SecondaryBackground", cardColor);
+        ApplyColorResource("SecondaryBackground", DimColor(cardColor, 0.72));
+        ApplyColorResource("CardHover", BlendWithWhite(cardColor, 0.08));
         ApplyColorResource("TextPrimary", textColor);
 
         foreach (var child in SuggestionsContainer.Children.OfType<Button>())
@@ -503,9 +511,35 @@ public partial class OverlayWindow : Window
         try
         {
             var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
-            return $"#{(byte)(color.R * alpha):X2}{(byte)(color.G * alpha):X2}{(byte)(color.B * alpha):X2}";
+            return $"#{(byte)Math.Clamp(color.R * alpha, 0, 255):X2}{(byte)Math.Clamp(color.G * alpha, 0, 255):X2}{(byte)Math.Clamp(color.B * alpha, 0, 255):X2}";
         }
         catch { return hex; }
+    }
+
+    /// <summary>Lighten a hex color slightly for hover states (mix toward white).</summary>
+    private static string BlendWithWhite(string hex, double amount)
+    {
+        try
+        {
+            var color = (Color)ColorConverter.ConvertFromString(hex);
+            amount = Math.Clamp(amount, 0, 1);
+            var r = (byte)(color.R + (255 - color.R) * amount);
+            var g = (byte)(color.G + (255 - color.G) * amount);
+            var b = (byte)(color.B + (255 - color.B) * amount);
+            return $"#{r:X2}{g:X2}{b:X2}";
+        }
+        catch { return hex; }
+    }
+
+    private static string BuildSuggestionToolTip(SuggestionItem suggestion)
+    {
+        var t = suggestion.DisplayText.Trim();
+        if (t.Length > 80)
+        {
+            t = t[..80] + "…";
+        }
+
+        return $"Key {suggestion.Slot} — insert \"{t}\"";
     }
 
     private static string GetSuggestionKindLabel(SuggestionKind kind)
@@ -551,11 +585,11 @@ public partial class OverlayWindow : Window
                 continue;
             }
 
-            var beginTime = TimeSpan.FromMilliseconds(Math.Min(index * 15, 75));
+            var beginTime = TimeSpan.FromMilliseconds(Math.Min(index * 20, 100));
             var fadeAnimation = new DoubleAnimation(0, 1, SuggestionFadeDuration)
             {
                 BeginTime = beginTime,
-                EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
             };
 
             button.BeginAnimation(OpacityProperty, fadeAnimation);
@@ -569,7 +603,7 @@ public partial class OverlayWindow : Window
                 ? TranslateTransform.XProperty
                 : TranslateTransform.YProperty;
 
-            var fromOffset = _currentLayout == OverlayLayout.Horizontal ? 10d : 10d;
+            var fromOffset = 12d;
             var slideAnimation = new DoubleAnimation(fromOffset, 0, SuggestionSlideDuration)
             {
                 BeginTime = beginTime,

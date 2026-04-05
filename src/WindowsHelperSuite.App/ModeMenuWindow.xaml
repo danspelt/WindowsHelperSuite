@@ -1,75 +1,25 @@
 <Window x:Class="WindowsHelperSuite.App.ModeMenuWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Mode Menu"
+        Title="Quick menu"
         WindowStyle="None"
         AllowsTransparency="True"
         Background="Transparent"
-        Topmost="True"
-        ShowActivated="True"
-        ShowInTaskbar="True"
-        WindowStartupLocation="CenterScreen"
-        Focusable="True"
         ResizeMode="NoResize"
         SizeToContent="WidthAndHeight"
-        TextOptions.TextFormattingMode="Display"
-        SnapsToDevicePixels="True">
-    <Border Background="#0F0F14"
-            BorderBrush="#2A2B36"
-            BorderThickness="1"
-            CornerRadius="14"
-            Padding="20,16"
-            Margin="10">
-        <Border.Effect>
-            <DropShadowEffect Color="#000000" BlurRadius="24" ShadowDepth="4" Opacity="0.5" Direction="270"/>
-        </Border.Effect>
-        <StackPanel MinWidth="320">
-            <TextBlock Text="MODE MENU"
-                       FontSize="11"
-                       FontWeight="Bold"
-                       Foreground="#6B7280"
-                       HorizontalAlignment="Center"
-                       Margin="0,0,0,6"/>
-            <TextBlock x:Name="CurrentModeText"
-                       FontSize="14"
-                       FontWeight="SemiBold"
-                       Foreground="#A78BFA"
-                       HorizontalAlignment="Center"
-                       Margin="0,0,0,14"/>
-            <ListBox x:Name="OptionsList"
-                     Background="#16171F"
-                     BorderThickness="1"
-                     BorderBrush="#2A2B36"
-                     Foreground="#F0F0F5"
-                     FontSize="15"
-                     FontFamily="Segoe UI"
-                     Padding="4"
-                     SelectionMode="Single"
-                     MinHeight="172"
-                     ScrollViewer.VerticalScrollBarVisibility="Hidden"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                <ListBox.ItemContainerStyle>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="Padding" Value="10,8"/>
-                        <Setter Property="Margin" Value="0,2"/>
-                        <Style.Triggers>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="#252636"/>
-                                <Setter Property="BorderBrush" Value="#4ADE80"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                            </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#1E1F2A"/>
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
-                </ListBox.ItemContainerStyle>
-            </ListBox>
-            <TextBlock Text="1–4 · ↑↓ · Enter · Esc"
-                       FontSize="11"
-                       Foreground="#4B5563"
-                       HorizontalAlignment="Center"
-                       Margin="0,12,0,0"/>
+        ShowInTaskbar="False"
+        Topmost="True"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI"
+        PreviewKeyDown="Window_PreviewKeyDown">
+    <Border Background="#141428" CornerRadius="14" BorderBrush="#303050" BorderThickness="1" Padding="22,18">
+        <StackPanel MinWidth="300" MaxWidth="440">
+            <TextBlock Text="QUICK MENU" FontSize="11" FontWeight="SemiBold" Foreground="#6A6A8A"/>
+            <TextBlock Margin="0,10,0,16" FontSize="12.5" Foreground="#A896E8" TextWrapping="Wrap"
+                       Text="Words &amp; phrases, settings, or dismiss."/>
+            <StackPanel x:Name="RowsHost"/>
+            <TextBlock Margin="0,14,0,0" HorizontalAlignment="Center" FontSize="11" Foreground="#555570"
+                       Text="1-3 · ↑↓ · Enter · Esc"/>
         </StackPanel>
     </Border>
 </Window>

@@ -1,283 +1,141 @@
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Interop;
-using System.Windows.Threading;
-using WindowsHelperSuite.Core.Interfaces;
-using WindowsHelperSuite.Core.Modes;
+using System.Windows.Media;
 
 namespace WindowsHelperSuite.App;
 
-public partial class ModeMenuWindow : Window, IModeMenuKeySink
+public partial class ModeMenuWindow : Window
 {
-    private readonly IModeManager _modeManager;
-    private readonly Action _openSettings;
-    private readonly ILoggingService _loggingService;
-    private readonly Action<string> _onModeFeedback;
-    private bool _focusApplied;
+    private readonly Action _openFullSettings;
+    private readonly Action _openWordsPhrases;
+    private int _selectedIndex;
+    private readonly List<Border> _rowBorders = [];
 
-    public ModeMenuWindow(
-        IModeManager modeManager,
-        Action openSettings,
-        ILoggingService loggingService,
-        Action<string> onModeFeedback)
+    private static readonly string[] RowLabels =
+    [
+        "1   Words & phrases",
+        "2   Settings",
+        "3   Cancel",
+    ];
+
+    public ModeMenuWindow(Action openFullSettings, Action openWordsPhrases)
     {
         InitializeComponent();
-        _modeManager = modeManager;
-        _openSettings = openSettings;
-        _loggingService = loggingService;
-        _onModeFeedback = onModeFeedback;
-
-        var current = ModeDefinition.For(_modeManager.CurrentMode);
-        CurrentModeText.Text = $"All features on · saved preference: {current.DisplayName}";
-
-        OptionsList.Items.Add("1  Writer Mode");
-        OptionsList.Items.Add("2  Hotkey Mode");
-        OptionsList.Items.Add("3  Settings");
-        OptionsList.Items.Add("4  Cancel");
-
-        OptionsList.SelectedIndex = _modeManager.CurrentMode == AppMode.Writer ? 0 : 1;
-
-        Loaded += OnLoaded;
-        // Backup when the window actually has keyboard focus (no ctrl filter).
-        PreviewKeyDown += OnMenuPreviewKeyDown;
-    }
-
-    private void OnMenuPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
-    {
-        if (e.Key == Key.Enter || e.Key == Key.Return)
+        _openFullSettings = openFullSettings;
+        _openWordsPhrases = openWordsPhrases;
+        _selectedIndex = 0;
+        BuildRows();
+        Loaded += (_, _) =>
         {
-            ActivateSelection();
-            e.Handled = true;
-        }
-    }
-
-    /// <summary>
-    /// Called from the low-level keyboard hook when the menu does not have OS focus.
-    /// </summary>
-    public bool TryConsumeKey(int virtualKey, bool ctrl, bool shift, bool alt)
-    {
-        if (alt)
-        {
-            return false;
-        }
-
-        // Volume hotkeys — do not steal. (Ctrl may still be down from Ctrl+F3; do not blanket-reject ctrl.)
-        if (ctrl && shift && (virtualKey == 0x26 || virtualKey == 0x28))
-        {
-            return false;
-        }
-
-        void Post(Action a) => Dispatcher.BeginInvoke(a, DispatcherPriority.Input);
-
-        switch (virtualKey)
-        {
-            case 0x1B:
-                Post(Close);
-                return true;
-            case 0x0D:
-                Post(ActivateSelection);
-                return true;
-            case 0x26:
-                Post(() => MoveSelection(-1));
-                return true;
-            case 0x28:
-                Post(() => MoveSelection(1));
-                return true;
-            case 0x31:
-                Post(() => ApplyMode(AppMode.Writer));
-                return true;
-            case 0x32:
-                Post(() => ApplyMode(AppMode.Hotkey));
-                return true;
-            case 0x33:
-                Post(OpenSettingsAndClose);
-                return true;
-            case 0x34:
-                Post(Close);
-                return true;
-            case 0x61:
-                Post(() => ApplyMode(AppMode.Writer));
-                return true;
-            case 0x62:
-                Post(() => ApplyMode(AppMode.Hotkey));
-                return true;
-            case 0x63:
-                Post(OpenSettingsAndClose);
-                return true;
-            case 0x64:
-                Post(Close);
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    private void OpenSettingsAndClose()
-    {
-        _loggingService.Information("Mode menu: opening Settings");
-        Close();
-        _openSettings();
-    }
-
-    private void OnLoaded(object sender, RoutedEventArgs e)
-    {
-        // Defer until after ShowDialog finishes its layout — avoids re-entrancy crashes during source init.
-        Dispatcher.BeginInvoke(ApplyForegroundAndListFocus, DispatcherPriority.Loaded);
-    }
-
-    private void ApplyForegroundAndListFocus()
-    {
-        if (_focusApplied)
-        {
-            return;
-        }
-
-        _focusApplied = true;
-
-        try
-        {
-            Native.TryBringWindowToForegroundSafe(this);
-        }
-        catch (Exception ex)
-        {
-            _loggingService.Warning($"Mode menu foreground: {ex.Message}");
-        }
-
-        try
-        {
-            Activate();
-            Topmost = true;
+            UpdateSelectionVisuals();
             Focus();
-            OptionsList.Focus();
-            Keyboard.Focus(OptionsList);
+        };
+    }
 
-            var i = OptionsList.SelectedIndex;
-            if (i >= 0 && OptionsList.ItemContainerGenerator.ContainerFromIndex(i) is ListBoxItem item)
+    private void BuildRows()
+    {
+        RowsHost.Children.Clear();
+        _rowBorders.Clear();
+
+        for (var i = 0; i < RowLabels.Length; i++)
+        {
+            var idx = i;
+            var border = new Border
             {
-                item.Focus();
-                Keyboard.Focus(item);
-            }
-        }
-        catch (Exception ex)
-        {
-            _loggingService.Warning($"Mode menu focus: {ex.Message}");
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(14, 11, 14, 11),
+                Margin = new Thickness(0, 0, 0, 6),
+                Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x1C, 0x1C, 0x32)),
+                Cursor = System.Windows.Input.Cursors.Hand,
+            };
+            border.MouseLeftButtonDown += (_, _) =>
+            {
+                _selectedIndex = idx;
+                UpdateSelectionVisuals();
+                ActivateRow(idx);
+            };
+
+            border.Child = new TextBlock
+            {
+                Text = RowLabels[i],
+                FontSize = 14,
+                Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xE8, 0xE8, 0xF2)),
+                TextWrapping = TextWrapping.Wrap,
+            };
+
+            RowsHost.Children.Add(border);
+            _rowBorders.Add(border);
         }
     }
 
-    private void MoveSelection(int delta)
+    private void UpdateSelectionVisuals()
     {
-        var i = OptionsList.SelectedIndex;
-        if (i < 0)
+        for (var i = 0; i < _rowBorders.Count; i++)
         {
-            i = 0;
+            var selected = i == _selectedIndex;
+            _rowBorders[i].BorderBrush = selected
+                ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x55, 0x88, 0xFF))
+                : System.Windows.Media.Brushes.Transparent;
+            _rowBorders[i].BorderThickness = new Thickness(selected ? 2 : 0);
         }
-
-        i = Math.Clamp(i + delta, 0, OptionsList.Items.Count - 1);
-        OptionsList.SelectedIndex = i;
-        OptionsList.SelectedItem = OptionsList.Items[i];
-        if (OptionsList.ItemContainerGenerator.ContainerFromIndex(i) is ListBoxItem item)
-        {
-            item.Focus();
-            Keyboard.Focus(item);
-        }
-
-        OptionsList.UpdateLayout();
-        OptionsList.ScrollIntoView(OptionsList.SelectedItem);
     }
 
-    private void ActivateSelection()
+    private void ActivateRow(int index)
     {
-        var i = OptionsList.SelectedIndex;
-        if (i < 0 && OptionsList.Items.Count > 0)
-        {
-            i = 0;
-            OptionsList.SelectedIndex = 0;
-        }
-
-        switch (i)
+        switch (index)
         {
             case 0:
-                ApplyMode(AppMode.Writer);
+                _openWordsPhrases();
+                Close();
                 break;
             case 1:
-                ApplyMode(AppMode.Hotkey);
+                _openFullSettings();
+                Close();
                 break;
             case 2:
-                OpenSettingsAndClose();
-                break;
-            default:
-                _loggingService.Debug("Mode menu closed (Cancel)");
                 Close();
                 break;
         }
     }
 
-    private void ApplyMode(AppMode mode)
+    private void Window_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        var result = _modeManager.SwitchMode(mode);
-        Close();
-        if (!result.Success)
+        switch (e.Key)
         {
-            _loggingService.Warning($"Mode switch failed: {result.ErrorMessage}");
-            return;
-        }
-
-        _onModeFeedback($"Preference: {ModeDefinition.For(mode).DisplayName}");
-    }
-
-    private static class Native
-    {
-        [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool SetForegroundWindow(IntPtr hWnd);
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetForegroundWindow();
-
-        [DllImport("user32.dll")]
-        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint _);
-
-        [DllImport("user32.dll")]
-        private static extern uint GetCurrentThreadId();
-
-        [DllImport("user32.dll")]
-        private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
-
-        internal static void TryBringWindowToForegroundSafe(Window window)
-        {
-            var h = new WindowInteropHelper(window).Handle;
-            if (h == IntPtr.Zero)
-            {
-                return;
-            }
-
-            var fg = GetForegroundWindow();
-            var cur = GetCurrentThreadId();
-            var fgThread = fg != IntPtr.Zero ? GetWindowThreadProcessId(fg, out _) : 0U;
-
-            if (fgThread != 0 && fgThread != cur)
-            {
-                if (!AttachThreadInput(fgThread, cur, true))
-                {
-                    SetForegroundWindow(h);
-                    return;
-                }
-
-                try
-                {
-                    SetForegroundWindow(h);
-                }
-                finally
-                {
-                    AttachThreadInput(fgThread, cur, false);
-                }
-            }
-            else
-            {
-                SetForegroundWindow(h);
-            }
+            case Key.Escape:
+                Close();
+                e.Handled = true;
+                break;
+            case Key.Up:
+                _selectedIndex = (_selectedIndex + RowLabels.Length - 1) % RowLabels.Length;
+                UpdateSelectionVisuals();
+                e.Handled = true;
+                break;
+            case Key.Down:
+                _selectedIndex = (_selectedIndex + 1) % RowLabels.Length;
+                UpdateSelectionVisuals();
+                e.Handled = true;
+                break;
+            case Key.Enter:
+                ActivateRow(_selectedIndex);
+                e.Handled = true;
+                break;
+            case Key.D1:
+            case Key.NumPad1:
+                ActivateRow(0);
+                e.Handled = true;
+                break;
+            case Key.D2:
+            case Key.NumPad2:
+                ActivateRow(1);
+                e.Handled = true;
+                break;
+            case Key.D3:
+            case Key.NumPad3:
+                ActivateRow(2);
+                e.Handled = true;
+                break;
         }
     }
 }
