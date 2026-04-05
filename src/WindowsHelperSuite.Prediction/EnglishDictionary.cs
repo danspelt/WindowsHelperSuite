@@ -7,7 +7,7 @@ namespace WindowsHelperSuite.Prediction;
 /// Tier 3: Common vocabulary (base frequency 20)
 /// Tier 4: Standard vocabulary (base frequency 5)
 /// </summary>
-internal static class EnglishDictionary
+public static class EnglishDictionary
 {
     // ── Tier 1: Top 100 most common English words ────────────────────────
     private static readonly string[] Tier1Words =

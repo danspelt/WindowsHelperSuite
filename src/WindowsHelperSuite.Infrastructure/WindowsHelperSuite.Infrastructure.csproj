@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\WindowsHelperSuite.Core\WindowsHelperSuite.Core.csproj" />
+    <ProjectReference Include="..\WindowsHelperSuite.Prediction\WindowsHelperSuite.Prediction.csproj" />
   </ItemGroup>
 
   <ItemGroup>

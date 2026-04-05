@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using WindowsHelperSuite.Core.Models.Settings;
+using WindowsHelperSuite.Prediction;
 
 namespace WindowsHelperSuite.Infrastructure.Services;
 
@@ -110,19 +111,29 @@ public static class QuickTextSettingsService
 
     private static List<QuickWordItem> CreateDefaultWords()
     {
-        var words = new[] { "Hello", "Yes", "No", "Thanks", "Help" };
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var list = new List<QuickWordItem>();
-        for (var i = 0; i < words.Length; i++)
+        var sort = 0;
+
+        foreach (var (words, _) in EnglishDictionary.WordTiers)
         {
-            list.Add(new QuickWordItem
+            foreach (var word in words)
             {
-                Id = Guid.NewGuid(),
-                Text = words[i],
-                SpeakText = null,
-                IsEnabled = true,
-                IsFavorite = false,
-                SortOrder = i,
-            });
+                if (string.IsNullOrWhiteSpace(word) || !seen.Add(word))
+                    continue;
+
+                // Title-case the display text
+                var display = char.ToUpper(word[0]) + word[1..];
+                list.Add(new QuickWordItem
+                {
+                    Id = Guid.NewGuid(),
+                    Text = display,
+                    SpeakText = null,
+                    IsEnabled = true,
+                    IsFavorite = false,
+                    SortOrder = sort++,
+                });
+            }
         }
 
         return list;
@@ -130,26 +141,29 @@ public static class QuickTextSettingsService
 
     private static List<QuickPhraseItem> CreateDefaultPhrases()
     {
-        var phrases = new[]
-        {
-            "I need help",
-            "One moment please",
-            "Thank you very much",
-            "Can you wait a minute?",
-            "I'm not ready yet",
-        };
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var list = new List<QuickPhraseItem>();
-        for (var i = 0; i < phrases.Length; i++)
+        var sort = 0;
+
+        foreach (var (phrases, _) in EnglishDictionary.PhraseTiers)
         {
-            list.Add(new QuickPhraseItem
+            foreach (var phrase in phrases)
             {
-                Id = Guid.NewGuid(),
-                Text = phrases[i],
-                SpeakText = null,
-                IsEnabled = true,
-                IsFavorite = false,
-                SortOrder = i,
-            });
+                if (string.IsNullOrWhiteSpace(phrase) || !seen.Add(phrase))
+                    continue;
+
+                // Sentence-case the display text
+                var display = char.ToUpper(phrase[0]) + phrase[1..];
+                list.Add(new QuickPhraseItem
+                {
+                    Id = Guid.NewGuid(),
+                    Text = display,
+                    SpeakText = null,
+                    IsEnabled = true,
+                    IsFavorite = false,
+                    SortOrder = sort++,
+                });
+            }
         }
 
         return list;
