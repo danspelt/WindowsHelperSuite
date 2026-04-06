@@ -63,6 +63,7 @@ public partial class HotkeySettingsWindow : Window
         ("AddPhraseToWordBank",        "Add Phrase to Bank",           "📋"),
         ("FixClipboardCapitalization", "Fix Clipboard Capitalization", "✏"),
         ("OpenModeMenu",               "Open Quick Menu", "☰"),
+        ("OpenSettings",               "Open Settings",    "⚙"),
     ];
 
     private static readonly Dictionary<string, string> DefaultGestures = new()
@@ -76,7 +77,8 @@ public partial class HotkeySettingsWindow : Window
         ["AddToWordBank"]              = "Ctrl+`",
         ["AddPhraseToWordBank"]        = "Ctrl+Shift+`",
         ["FixClipboardCapitalization"] = "Ctrl+Shift+C",
-        ["OpenModeMenu"]               = "Ctrl+F3",
+        ["OpenModeMenu"]               = "Ctrl+Shift+F3",
+        ["OpenSettings"]               = "Ctrl+F3",
     };
 
     private readonly Dictionary<string, string> _pending = new();

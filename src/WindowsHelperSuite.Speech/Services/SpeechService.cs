@@ -13,6 +13,7 @@ public sealed class SpeechService : ISpeechService, IDisposable
     private readonly ILoggingService? _log;
     private readonly HeadsetDetector _headsetDetector = new();
     private readonly AzureSpeechEngine _azure = new();
+    private readonly EdgeTtsEngine _edge = new();
     private readonly WindowsSpeechEngine _windows;
     private readonly System.Timers.Timer _deviceCheckTimer;
     private volatile bool _headsetConnected;
@@ -181,6 +182,7 @@ public sealed class SpeechService : ISpeechService, IDisposable
         }
 
         _azure.StopSpeaking();
+        _edge.StopSpeaking();
         _windows.Stop();
     }
 
@@ -271,6 +273,7 @@ public sealed class SpeechService : ISpeechService, IDisposable
                 return;
 
             default:
+                // 1. Try Azure (highest quality, needs API key)
                 if (_azure.IsConfigured(settings) && AzureSpeechEngine.IsNetworkAvailable())
                 {
                     var ssml = AzureSpeechEngine.BuildSsml(text, settings, _rate);
@@ -278,11 +281,25 @@ public sealed class SpeechService : ISpeechService, IDisposable
                         .ConfigureAwait(false);
                     if (ok)
                     {
-                        _voiceRouteStatus = "Online";
+                        _voiceRouteStatus = "Online (Azure)";
                         return;
                     }
                 }
 
+                // 2. Try Edge TTS (free neural voices, needs internet, no API key)
+                if (AzureSpeechEngine.IsNetworkAvailable())
+                {
+                    var edgeOk = await _edge.TrySpeakAsync(
+                        text, settings, _rate, _volume, _log, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (edgeOk)
+                    {
+                        _voiceRouteStatus = "Online (Edge Neural)";
+                        return;
+                    }
+                }
+
+                // 3. Offline fallback (System.Speech — robotic but always available)
                 _windows.Speak(text, rateOffline, volOffline, OfflineVoiceOrNull(settings), _log);
                 _voiceRouteStatus = "Offline fallback";
                 break;
@@ -331,6 +348,7 @@ public sealed class SpeechService : ISpeechService, IDisposable
             _speakCts = null;
         }
 
+        _edge.Dispose();
         _windows.Dispose();
     }
 

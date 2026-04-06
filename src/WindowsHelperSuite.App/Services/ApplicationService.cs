@@ -581,6 +581,11 @@ public class ApplicationService : IDisposable
         });
 
         _hotkeyService.RegisterAction("OpenModeMenu", ShowModeMenu);
+
+        _hotkeyService.RegisterAction("OpenSettings", () =>
+        {
+            _trayIconService.ShowSettings();
+        });
     }
 
     private void ShowModeMenu()
@@ -610,6 +615,7 @@ public class ApplicationService : IDisposable
             _hotkeyService.RegisterHotkey("AddPhraseToWordBank", "Ctrl+Shift+`");
             _hotkeyService.RegisterHotkey("FixClipboardCapitalization", "Ctrl+Shift+C");
             _hotkeyService.RegisterHotkey("OpenModeMenu", _settingsService.Settings.ModeSystem.MenuHotkeyGesture, true);
+            _hotkeyService.RegisterHotkey("OpenSettings", "Ctrl+F3");
 
             _loggingService.Information("Registered default hotkeys");
         }
@@ -637,7 +643,7 @@ public class ApplicationService : IDisposable
     [
         "VolumeUp", "VolumeDown", "VolumeMute", "WriterRefresh",
         "ToggleOverlay", "PauseWriter", "AddToWordBank", "AddPhraseToWordBank",
-        "FixClipboardCapitalization", "OpenModeMenu",
+        "FixClipboardCapitalization", "OpenModeMenu", "OpenSettings",
     ];
 
     private void ReloadHotkeys()

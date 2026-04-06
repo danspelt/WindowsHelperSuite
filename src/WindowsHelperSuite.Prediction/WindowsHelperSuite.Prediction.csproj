@@ -10,4 +10,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\english-words.txt" />
+    <EmbeddedResource Include="Resources\texting-phrases.txt" />
+  </ItemGroup>
+
 </Project>
