@@ -43,6 +43,13 @@ public class InputService : IInputService, IDisposable
     public event EventHandler? NextPageKeyPressed;
     public event EventHandler? PreviousPageKeyPressed;
     public event EventHandler? ManualRefreshRequested;
+    /// <summary>Overlay visible: move suggestion highlight; delta -1 = Up, +1 = Down.</summary>
+    public event EventHandler<int>? SuggestionHighlightMoved;
+
+    /// <summary>
+    /// Returns the slot (1–9) of the keyboard-highlighted overlay suggestion, or null. Set by the app (UI thread).
+    /// </summary>
+    public Func<int?>? TryGetHighlightedSuggestionSlot { get; set; }
     public event EventHandler? TypingStarted;
     public event EventHandler? TypingStopped;
     public event EventHandler? OverlayDismissRequested;
@@ -304,6 +311,25 @@ public class InputService : IInputService, IDisposable
                 return;
             }
 
+            // Left arrow: delete previous completed word before partial (Ctrl/Alt still go to host)
+            if (key == 0x25 && !e.Ctrl && !e.Alt && TryDeletePreviousWordBeforePartial())
+            {
+                e.Handled = true;
+                _inactivityTimer.Stop();
+                _inactivityTimer.Start();
+                return;
+            }
+
+            // Up/Down: move highlight in suggestion list (Ctrl/Alt still go to host)
+            if (!e.Ctrl && !e.Alt && (key == 0x26 || key == 0x28)) // Up / Down
+            {
+                e.Handled = true;
+                _inactivityTimer.Stop();
+                _inactivityTimer.Start();
+                SuggestionHighlightMoved?.Invoke(this, key == 0x26 ? -1 : 1);
+                return;
+            }
+
             // Esc or Tab closes overlay and stops typing session
             if (key == 0x1B || key == 0x09) // Escape or Tab
             {
@@ -358,6 +384,11 @@ public class InputService : IInputService, IDisposable
                 {
                     _hasValidTextInput = false;
                     InvalidTypingDetected?.Invoke(this, EventArgs.Empty);
+                    return;
+                }
+
+                if (!WriterWordBufferPolicy.CanStartWriterSessionFromKeystroke(typedChar))
+                {
                     return;
                 }
 
@@ -505,6 +536,26 @@ public class InputService : IInputService, IDisposable
         }
         else if (key == 0x0D) // Enter
         {
+            // Plain Enter: accept keyboard-highlighted suggestion if any (Shift/Ctrl/Alt = send Enter to host, e.g. newline)
+            if (IsOverlayVisible && !e.Shift && !e.Ctrl && !e.Alt)
+            {
+                var slot = TryGetHighlightedSuggestionSlot?.Invoke();
+                if (slot is >= 1 and <= 9)
+                {
+                    e.Handled = true;
+                    _inactivityTimer.Stop();
+                    _inactivityTimer.Start();
+                    SelectionKeyPressed?.Invoke(this, slot.Value);
+                    return;
+                }
+            }
+
+            // Shift/Ctrl/Alt+Enter: pass through to host (e.g. newline) while overlay is up
+            if (IsOverlayVisible && (e.Shift || e.Ctrl || e.Alt))
+            {
+                return;
+            }
+
             string? wordCompleted = null;
             string? sentenceCompleted = null;
             string textBeforeWord = string.Empty;
@@ -646,6 +697,51 @@ public class InputService : IInputService, IDisposable
     public void BeginInjection() => _suppressHookProcessing = true;
     public void EndInjection() => _suppressHookProcessing = false;
 
+    /// <summary>
+    /// Deletes the last whitespace-delimited token before the partial word in the focused field and realigns buffers.
+    /// </summary>
+    /// <returns>True when a deletion was applied.</returns>
+    private bool TryDeletePreviousWordBeforePartial()
+    {
+        string before;
+        string partialWord;
+        lock (_bufferLock)
+        {
+            before = GetTextBeforeCurrentWordLocked();
+            partialWord = _currentWord.ToString();
+        }
+
+        if (!WriterWordBufferPolicy.TryGetDeletePreviousWordStart(before, out var startIndex))
+        {
+            return false;
+        }
+
+        var deleteCount = before.Length - startIndex;
+        BeginInjection();
+        try
+        {
+            Win32TextInjection.SendBackspace(deleteCount);
+            lock (_bufferLock)
+            {
+                _currentSentence.Clear();
+                if (startIndex > 0)
+                {
+                    _currentSentence.Append(before.AsSpan(0, startIndex));
+                }
+
+                _currentSentence.Append(partialWord);
+            }
+        }
+        finally
+        {
+            EndInjection();
+        }
+
+        TextCaptured?.Invoke(this, GetCurrentWord());
+        _loggingService.Debug($"Delete previous word: removed {deleteCount} chars before partial (startIndex={startIndex})");
+        return true;
+    }
+
     private void AppendSentenceSeparatorLocked(char typedChar)
     {
         if (_currentSentence.Length == 0)
@@ -653,8 +749,15 @@ public class InputService : IInputService, IDisposable
             return;
         }
 
-        if (typedChar == ' ')
+        // Treat any whitespace (tab, NBSP, etc.) as a word boundary — same as a typed space — so overlay/speech
+        // never show words glued together.
+        if (char.IsWhiteSpace(typedChar))
         {
+            if (typedChar == '\r')
+            {
+                return;
+            }
+
             if (_currentSentence[^1] != ' ')
             {
                 _currentSentence.Append(' ');

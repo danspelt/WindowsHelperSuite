@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using WindowsHelperSuite.Core.Models;
+using WindowsHelperSuite.Infrastructure.Hooks;
 
 namespace WindowsHelperSuite.Overlay.Views;
 
@@ -19,10 +20,14 @@ public partial class OverlayWindow : Window
     private static readonly Duration OverlayRefreshDuration = new(TimeSpan.FromMilliseconds(100));
     private static readonly Duration SuggestionFadeDuration = new(TimeSpan.FromMilliseconds(100));
     private static readonly Duration SuggestionSlideDuration = new(TimeSpan.FromMilliseconds(115));
+    /// <summary>Visual index in <see cref="SuggestionsContainer"/> for keyboard highlight; null = none.</summary>
+    private int? _highlightedVisualIndex;
 
     public event EventHandler<int>? SuggestionSelected;
     public event EventHandler? NextPageRequested;
     public event EventHandler? PreviousPageRequested;
+    /// <summary>Display text of the suggestion now keyboard-highlighted.</summary>
+    public event EventHandler<string?>? SuggestionHighlightChanged;
 
     public OverlayWindow()
     {
@@ -58,6 +63,8 @@ public partial class OverlayWindow : Window
         ApplyLayout();
         RenderSuggestions();
         UpdatePagingIndicator();
+        _highlightedVisualIndex = null;
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, ApplySuggestionHighlight);
 
         if (suggestions.Count > 0)
         {
@@ -154,6 +161,70 @@ public partial class OverlayWindow : Window
         {
             var button = CreateSuggestionButton(suggestion);
             SuggestionsContainer.Children.Add(button);
+        }
+    }
+
+    /// <summary>Moves keyboard highlight in list order (Up = earlier, Down = later); wraps within the page.</summary>
+    public void MoveSuggestionHighlight(int delta)
+    {
+        var buttons = SuggestionsContainer.Children.OfType<Button>().ToList();
+        var n = buttons.Count;
+        if (n == 0)
+        {
+            return;
+        }
+
+        if (_highlightedVisualIndex == null)
+        {
+            _highlightedVisualIndex = delta > 0 ? 0 : n - 1;
+        }
+        else
+        {
+            _highlightedVisualIndex = ((_highlightedVisualIndex.Value + delta) % n + n) % n;
+        }
+
+        ApplySuggestionHighlight();
+        RaiseSuggestionHighlightChanged();
+    }
+
+    /// <summary>Keyboard highlight slot for the current page (matches number-key pick), or null if none.</summary>
+    public int? GetHighlightedSuggestionSlot()
+    {
+        if (_highlightedVisualIndex is not { } idx || idx < 0 || idx >= _currentSuggestions.Count)
+        {
+            return null;
+        }
+
+        return _currentSuggestions[idx].Slot;
+    }
+
+    private void RaiseSuggestionHighlightChanged()
+    {
+        if (_highlightedVisualIndex is not { } idx || idx < 0 || idx >= _currentSuggestions.Count)
+        {
+            return;
+        }
+
+        SuggestionHighlightChanged?.Invoke(this, _currentSuggestions[idx].DisplayText);
+    }
+
+    private void ApplySuggestionHighlight()
+    {
+        var buttons = SuggestionsContainer.Children.OfType<Button>().ToList();
+        var n = buttons.Count;
+        for (var i = 0; i < n; i++)
+        {
+            var button = buttons[i];
+            button.ApplyTemplate();
+            if (button.Template?.FindName("border", button) is not System.Windows.Controls.Border border)
+            {
+                continue;
+            }
+
+            var selected = _highlightedVisualIndex == i;
+            border.Background = (Brush)FindResource(selected ? "CardHover" : "CardBackground");
+            border.BorderBrush = (Brush)FindResource(selected ? "AccentGreen" : "BorderSubtle");
+            border.BorderThickness = new Thickness(selected ? 2 : 1);
         }
     }
 
@@ -386,7 +457,27 @@ public partial class OverlayWindow : Window
             UpdateLayout();
         }
 
-        var screen = SystemParameters.WorkArea;
+        // Work area for the monitor that contains the caret (multi-monitor)
+        double screenLeft;
+        double screenTop;
+        double screenRight;
+        double screenBottom;
+        if (Win32Screen.TryGetWorkAreaForPoint(caretX, caretY, out var wl, out var wt, out var wr, out var wb))
+        {
+            screenLeft = wl;
+            screenTop = wt;
+            screenRight = wr;
+            screenBottom = wb;
+        }
+        else
+        {
+            var wa = SystemParameters.WorkArea;
+            screenLeft = wa.Left;
+            screenTop = wa.Top;
+            screenRight = wa.Right;
+            screenBottom = wa.Bottom;
+        }
+
         var measuredWidth = ActualWidth > 0 ? ActualWidth : DesiredSize.Width;
         var measuredHeight = ActualHeight > 0 ? ActualHeight : DesiredSize.Height;
         var windowWidth = measuredWidth > 0 ? measuredWidth : 600;
@@ -398,8 +489,8 @@ public partial class OverlayWindow : Window
         double left = caretX;
         double top;
 
-        var spaceBelow = screen.Bottom - (caretY + gapBelow);
-        var spaceAbove = caretY - screen.Top - gapAbove;
+        var spaceBelow = screenBottom - (caretY + gapBelow);
+        var spaceAbove = caretY - screenTop - gapAbove;
 
         if (preferredPosition == ScreenPosition.Above)
         {
@@ -413,7 +504,7 @@ public partial class OverlayWindow : Window
             }
             else
             {
-                top = screen.Bottom - windowHeight - 8;
+                top = screenBottom - windowHeight - 8;
             }
         }
         else if (preferredPosition == ScreenPosition.Below)
@@ -428,7 +519,7 @@ public partial class OverlayWindow : Window
             }
             else
             {
-                top = screen.Bottom - windowHeight - 8;
+                top = screenBottom - windowHeight - 8;
             }
         }
         else
@@ -443,13 +534,13 @@ public partial class OverlayWindow : Window
             }
             else
             {
-                top = screen.Bottom - windowHeight - 8;
+                top = screenBottom - windowHeight - 8;
             }
         }
 
-        // Ensure window stays on screen horizontally
-        left = Math.Max(screen.Left + 4, Math.Min(left, screen.Right - windowWidth - 4));
-        top = Math.Max(screen.Top, Math.Min(top, screen.Bottom - windowHeight));
+        // Ensure window stays on the correct monitor work area horizontally and vertically
+        left = Math.Max(screenLeft + 4, Math.Min(left, screenRight - windowWidth - 4));
+        top = Math.Max(screenTop, Math.Min(top, screenBottom - windowHeight));
 
         Left = left;
         Top = top;
@@ -457,10 +548,15 @@ public partial class OverlayWindow : Window
 
     public void ApplyUiSettings(int fontSize, double opacity, bool largeTextMode,
         string accentColor = "#4ADE80", string bgColor = "#0F0F14",
-        string cardColor = "#1E1F2A", string textColor = "#F0F0F5")
+        string cardColor = "#1E1F2A", string textColor = "#F0F0F5",
+        string fontFamily = "Segoe UI", string fontWeight = "SemiBold")
     {
         var baseFontSize = largeTextMode ? Math.Max(fontSize * 1.5, 20) : Math.Max(fontSize, 16);
         Opacity = Math.Clamp(opacity, 0.35, 1.0);
+
+        var ff = new System.Windows.Media.FontFamily(
+            string.IsNullOrWhiteSpace(fontFamily) ? "Segoe UI" : fontFamily);
+        var fw = ParseFontWeight(fontWeight);
 
         ApplyColorResource("AccentGreen", accentColor);
         ApplyColorResource("AccentStripe", accentColor);
@@ -471,20 +567,27 @@ public partial class OverlayWindow : Window
         ApplyColorResource("CardHover", BlendWithWhite(cardColor, 0.08));
         ApplyColorResource("TextPrimary", textColor);
 
+        FontFamily = ff;
+
         foreach (var child in SuggestionsContainer.Children.OfType<Button>())
         {
             child.FontSize = baseFontSize;
+            child.FontFamily = ff;
+            child.FontWeight = fw;
             var stackPanel = child.Content as StackPanel;
             if (stackPanel?.Children.Count > 1 && stackPanel.Children[1] is StackPanel textPanel)
             {
                 if (textPanel.Children.Count > 0 && textPanel.Children[0] is TextBlock textBlock)
                 {
                     textBlock.FontSize = baseFontSize;
+                    textBlock.FontFamily = ff;
+                    textBlock.FontWeight = fw;
                 }
 
                 if (textPanel.Children.Count > 1 && textPanel.Children[1] is TextBlock detailText)
                 {
                     detailText.FontSize = Math.Max(baseFontSize - 5, 11);
+                    detailText.FontFamily = ff;
                 }
             }
 
@@ -492,9 +595,24 @@ public partial class OverlayWindow : Window
         }
 
         ContextLabel.FontSize = Math.Max(baseFontSize - 4, 12);
+        ContextLabel.FontFamily = ff;
         PagingIndicator.FontSize = Math.Max(baseFontSize - 6, 11);
         SpeakerIndicator.FontSize = Math.Max(baseFontSize - 6, 11);
     }
+
+    private static FontWeight ParseFontWeight(string? weight) => (weight?.Trim().ToLowerInvariant()) switch
+    {
+        "thin"       => FontWeights.Thin,
+        "extralight" => FontWeights.ExtraLight,
+        "light"      => FontWeights.Light,
+        "normal"     => FontWeights.Normal,
+        "medium"     => FontWeights.Medium,
+        "semibold"   => FontWeights.SemiBold,
+        "bold"       => FontWeights.Bold,
+        "extrabold"  => FontWeights.ExtraBold,
+        "black"      => FontWeights.Black,
+        _            => FontWeights.SemiBold,
+    };
 
     private void ApplyColorResource(string key, string hex)
     {

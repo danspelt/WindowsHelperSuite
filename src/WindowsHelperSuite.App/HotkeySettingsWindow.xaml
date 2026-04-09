@@ -555,6 +555,40 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="160"/>
                                     <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Font Family" FontSize="14" Foreground="#D8D8F0"/>
+                                    <TextBlock Text="Overlay suggestion font" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <ComboBox x:Name="FontFamilyCombo" Grid.Column="1"
+                                          Background="#12122A" Foreground="#88BBFF"
+                                          FontSize="13" Padding="8,6"
+                                          VerticalAlignment="Center" Margin="12,0,0,0"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Font Weight" FontSize="14" Foreground="#D8D8F0"/>
+                                    <TextBlock Text="Suggestion text boldness" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <ComboBox x:Name="FontWeightCombo" Grid.Column="1"
+                                          Background="#12122A" Foreground="#88BBFF"
+                                          FontSize="13" Padding="8,6"
+                                          VerticalAlignment="Center" Margin="12,0,0,0"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160"/>
+                                    <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="46"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center">
@@ -620,12 +654,18 @@
                                         <TextBlock Text="Stripe, badges, and highlights" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                        <Border x:Name="AccentPreview" Width="32" Height="24" CornerRadius="5" Margin="0,0,8,0"/>
+                                        <Border x:Name="AccentPreview" Width="32" Height="24" CornerRadius="5" Margin="0,0,8,0"
+                                                Cursor="Hand" ToolTip="Click to pick color"
+                                                MouseLeftButtonUp="AccentPreview_Click"/>
                                         <TextBox x:Name="AccentHex" Width="88" Background="#12122A"
                                                  Foreground="#88BBFF" BorderThickness="0"
                                                  FontFamily="Consolas" FontSize="13" Padding="6,4"
                                                  VerticalContentAlignment="Center"
                                                  TextChanged="AccentHex_TextChanged"/>
+                                        <Button Content="■" FontSize="16" Padding="6,2" Margin="6,0,0,0"
+                                                ToolTip="Open color picker"
+                                                Click="AccentPick_Click"
+                                                Style="{StaticResource ActionBtn}"/>
                                     </StackPanel>
                                 </Grid>
                                 <WrapPanel x:Name="AccentSwatches"/>
@@ -640,12 +680,18 @@
                                         <TextBlock Text="Overlay panel background" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                        <Border x:Name="BgPreview" Width="32" Height="24" CornerRadius="5" Margin="0,0,8,0"/>
+                                        <Border x:Name="BgPreview" Width="32" Height="24" CornerRadius="5" Margin="0,0,8,0"
+                                                Cursor="Hand" ToolTip="Click to pick color"
+                                                MouseLeftButtonUp="BgPreview_Click"/>
                                         <TextBox x:Name="BgHex" Width="88" Background="#12122A"
                                                  Foreground="#88BBFF" BorderThickness="0"
                                                  FontFamily="Consolas" FontSize="13" Padding="6,4"
                                                  VerticalContentAlignment="Center"
                                                  TextChanged="BgHex_TextChanged"/>
+                                        <Button Content="■" FontSize="16" Padding="6,2" Margin="6,0,0,0"
+                                                ToolTip="Open color picker"
+                                                Click="BgPick_Click"
+                                                Style="{StaticResource ActionBtn}"/>
                                     </StackPanel>
                                 </Grid>
                                 <WrapPanel x:Name="BgSwatches"/>
@@ -660,12 +706,18 @@
                                         <TextBlock Text="Suggestion button background" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                        <Border x:Name="CardPreview" Width="32" Height="24" CornerRadius="5" Margin="0,0,8,0"/>
+                                        <Border x:Name="CardPreview" Width="32" Height="24" CornerRadius="5" Margin="0,0,8,0"
+                                                Cursor="Hand" ToolTip="Click to pick color"
+                                                MouseLeftButtonUp="CardPreview_Click"/>
                                         <TextBox x:Name="CardHex" Width="88" Background="#12122A"
                                                  Foreground="#88BBFF" BorderThickness="0"
                                                  FontFamily="Consolas" FontSize="13" Padding="6,4"
                                                  VerticalContentAlignment="Center"
                                                  TextChanged="CardHex_TextChanged"/>
+                                        <Button Content="■" FontSize="16" Padding="6,2" Margin="6,0,0,0"
+                                                ToolTip="Open color picker"
+                                                Click="CardPick_Click"
+                                                Style="{StaticResource ActionBtn}"/>
                                     </StackPanel>
                                 </Grid>
                                 <WrapPanel x:Name="CardSwatches"/>
@@ -680,12 +732,18 @@
                                         <TextBlock Text="Suggestion label text" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
                                     </StackPanel>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                        <Border x:Name="TextPreview" Width="32" Height="24" CornerRadius="5" Margin="0,0,8,0"/>
+                                        <Border x:Name="TextPreview" Width="32" Height="24" CornerRadius="5" Margin="0,0,8,0"
+                                                Cursor="Hand" ToolTip="Click to pick color"
+                                                MouseLeftButtonUp="TextPreview_Click"/>
                                         <TextBox x:Name="TextHex" Width="88" Background="#12122A"
                                                  Foreground="#88BBFF" BorderThickness="0"
                                                  FontFamily="Consolas" FontSize="13" Padding="6,4"
                                                  VerticalContentAlignment="Center"
                                                  TextChanged="TextHex_TextChanged"/>
+                                        <Button Content="■" FontSize="16" Padding="6,2" Margin="6,0,0,0"
+                                                ToolTip="Open color picker"
+                                                Click="TextPick_Click"
+                                                Style="{StaticResource ActionBtn}"/>
                                     </StackPanel>
                                 </Grid>
                                 <WrapPanel x:Name="TextSwatches"/>
@@ -751,6 +809,30 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Speak when selecting suggestions" TextWrapping="Wrap" Foreground="#D8D8F0" VerticalAlignment="Center"/>
                                 <CheckBox x:Name="SpeechEnableSelection" Grid.Column="1" VerticalAlignment="Center" Foreground="#88BBFF"/>
+                            </Grid>
+                        </Border>
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Speak when moving suggestion highlight (↑↓)" TextWrapping="Wrap" Foreground="#D8D8F0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="SpeechEnableHighlight" Grid.Column="1" VerticalAlignment="Center" Foreground="#88BBFF"/>
+                            </Grid>
+                        </Border>
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="220"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="44"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Highlight speech delay (ms)" VerticalAlignment="Center" Foreground="#D8D8F0" TextWrapping="Wrap"/>
+                                <Slider x:Name="SpeechHighlightDebounceSlider" Grid.Column="1" Minimum="0" Maximum="2000" TickFrequency="50"
+                                        IsSnapToTickEnabled="True" VerticalAlignment="Center" Margin="8,0"/>
+                                <TextBlock x:Name="SpeechHighlightDebounceLabel" Grid.Column="2" Text="200" Foreground="#88BBFF"
+                                           VerticalAlignment="Center" FontFamily="Consolas"/>
                             </Grid>
                         </Border>
                         <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">

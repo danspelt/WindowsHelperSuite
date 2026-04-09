@@ -326,8 +326,10 @@ public sealed class SpeechService : ISpeechService, IDisposable
             return string.Empty;
         }
 
-        return string.Join(' ', text
-            .Split([' ', '\r', '\n', '\t'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        // Null separator: split on all Unicode whitespace so NBSP/thin space/etc. do not merge words for TTS.
+        return string.Join(' ', text.Split(
+            (char[]?)null,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
     }
 
     public void Dispose()

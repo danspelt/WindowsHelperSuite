@@ -24,6 +24,7 @@ public class OverlayService : IOverlayService, IDisposable
     private int _lastLogCaretY = int.MinValue;
 
     public event EventHandler<int>? SuggestionSelected;
+    public event EventHandler<string?>? SuggestionHighlightChanged;
 
     public OverlayService(ILoggingService loggingService, ISettingsService settingsService)
     {
@@ -74,6 +75,41 @@ public class OverlayService : IOverlayService, IDisposable
             ShowCurrentPage();
             PositionAtCaret();
             _loggingService.Information($"Moved to page {_currentPage + 1} of {_totalPages}");
+        }
+    }
+
+    public void MoveSuggestionHighlight(int delta)
+    {
+        if (delta is not (-1) and not 1)
+        {
+            return;
+        }
+
+        RunOnUiThread(() => _overlayWindow?.MoveSuggestionHighlight(delta));
+    }
+
+    public int? GetHighlightedSuggestionSlot()
+    {
+        EnsureWindowCreated();
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null || _overlayWindow == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (dispatcher.CheckAccess())
+            {
+                return _overlayWindow.GetHighlightedSuggestionSlot();
+            }
+
+            return dispatcher.Invoke(() => _overlayWindow.GetHighlightedSuggestionSlot());
+        }
+        catch (Exception ex)
+        {
+            _loggingService.Warning($"GetHighlightedSuggestionSlot: {ex.Message}");
+            return null;
         }
     }
 
@@ -196,7 +232,8 @@ public class OverlayService : IOverlayService, IDisposable
             var ui = _settingsService.Settings.Ui;
             _overlayWindow.SetLayout(_layout);
             _overlayWindow.ApplyUiSettings(ui.FontSize, ui.Opacity, ui.LargeTextMode,
-                ui.AccentColor, ui.OverlayBackgroundColor, ui.CardColor, ui.TextColor);
+                ui.AccentColor, ui.OverlayBackgroundColor, ui.CardColor, ui.TextColor,
+                ui.FontFamily, ui.FontWeight);
             _overlayWindow.ShowSuggestions(_currentPageSuggestions, _currentPage, _totalPages);
         });
         if (_currentPageSuggestions.Count != _lastLogPageSuggestionCount
@@ -223,8 +260,10 @@ public class OverlayService : IOverlayService, IDisposable
                 var ui = _settingsService.Settings.Ui;
                 _overlayWindow.SetLayout(_layout);
                 _overlayWindow.ApplyUiSettings(ui.FontSize, ui.Opacity, ui.LargeTextMode,
-                    ui.AccentColor, ui.OverlayBackgroundColor, ui.CardColor, ui.TextColor);
+                    ui.AccentColor, ui.OverlayBackgroundColor, ui.CardColor, ui.TextColor,
+                    ui.FontFamily, ui.FontWeight);
                 _overlayWindow.SuggestionSelected += OnSuggestionSelected;
+                _overlayWindow.SuggestionHighlightChanged += OnSuggestionHighlightChanged;
                 _overlayWindow.NextPageRequested += (s, e) => MoveToNextPage();
                 _overlayWindow.PreviousPageRequested += (s, e) => MoveToPreviousPage();
             });
@@ -263,6 +302,11 @@ public class OverlayService : IOverlayService, IDisposable
     private void OnSuggestionSelected(object? sender, int slot)
     {
         SuggestionSelected?.Invoke(this, slot);
+    }
+
+    private void OnSuggestionHighlightChanged(object? sender, string? displayText)
+    {
+        SuggestionHighlightChanged?.Invoke(this, displayText);
     }
 
     public void Dispose()

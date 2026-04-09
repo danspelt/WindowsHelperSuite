@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Threading;
 using WindowsHelperSuite.AI.Contracts;
 using WindowsHelperSuite.AI.Models;
@@ -55,6 +57,7 @@ public class ApplicationService : IDisposable
     private readonly IConversationStore _conversationStore;
     private readonly ChatOptions _chatOptions;
     private ChatWindow? _chatWindow;
+    private CancellationTokenSource? _highlightSpeechCts;
 
     public ApplicationService(
         IWriterContext? writerContext = null,
@@ -123,6 +126,8 @@ public class ApplicationService : IDisposable
 
         // Wire up suggestion selection to text injection
         _overlayService.SuggestionSelected += OnSuggestionSelected;
+        _overlayService.SuggestionHighlightChanged += OnSuggestionHighlightChanged;
+        _inputService.TryGetHighlightedSuggestionSlot = () => _overlayService.GetHighlightedSuggestionSlot();
 
         WireInputToOverlay();
         RegisterHotkeyActions();
@@ -324,6 +329,8 @@ public class ApplicationService : IDisposable
 
         _inputService.NextPageKeyPressed += (_, _) => DeferWriterUi(() => _overlayService.MoveToNextPage());
         _inputService.PreviousPageKeyPressed += (_, _) => DeferWriterUi(() => _overlayService.MoveToPreviousPage());
+        _inputService.SuggestionHighlightMoved += (_, delta) =>
+            DeferWriterUi(() => _overlayService.MoveSuggestionHighlight(delta));
     }
 
     private string _currentWord = string.Empty;
@@ -470,6 +477,59 @@ public class ApplicationService : IDisposable
             string.IsNullOrWhiteSpace(fullSentence) ? null : fullSentence);
 
         _overlayService.ShowSuggestions(suggestions);
+    }
+
+    private void OnSuggestionHighlightChanged(object? sender, string? displayText)
+    {
+        if (string.IsNullOrWhiteSpace(displayText))
+        {
+            return;
+        }
+
+        if (!_settingsService.Settings.Speech.EnableSpeechOnHighlight ||
+            (_speakMode != SpeakMode.WordsOnly && _speakMode != SpeakMode.Both))
+        {
+            return;
+        }
+
+        _highlightSpeechCts?.Cancel();
+        _highlightSpeechCts?.Dispose();
+        _highlightSpeechCts = new CancellationTokenSource();
+        var token = _highlightSpeechCts.Token;
+        var text = displayText.Trim();
+        var debounceMs = Math.Clamp(_settingsService.Settings.Speech.HighlightSpeechDebounceMs, 0, 2000);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                if (debounceMs > 0)
+                {
+                    await Task.Delay(debounceMs, token).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (token.IsCancellationRequested)
+            {
+                return;
+            }
+
+            DeferWriterUi(() =>
+            {
+                if (!_settingsService.Settings.Speech.EnableSpeechOnHighlight ||
+                    (_speakMode != SpeakMode.WordsOnly && _speakMode != SpeakMode.Both))
+                {
+                    return;
+                }
+
+                _speechService.SpeakQueued(text, true);
+                _overlayService.ShowSpeakerIndicator(text);
+            });
+        });
     }
 
     private void OnSuggestionSelected(object? sender, int slot)
@@ -1201,6 +1261,9 @@ public class ApplicationService : IDisposable
 
     public void Dispose()
     {
+        _highlightSpeechCts?.Cancel();
+        _highlightSpeechCts?.Dispose();
+        _highlightSpeechCts = null;
         _focusCheckTimer.Stop();
         _focusCheckTimer.Dispose();
         _inputService.Dispose();

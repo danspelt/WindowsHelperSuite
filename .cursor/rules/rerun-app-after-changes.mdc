@@ -1,0 +1,14 @@
+---
+description: After editing Windows Helper Suite code, rebuild and rerun the desktop app so changes are verified.
+alwaysApply: true
+---
+
+# Rerun app after code changes
+
+For this repo (**WindowsHelperSuite**), after **any substantive code or project change** (not for doc-only edits unless requested):
+
+1. **Stop** a running instance if it would lock build outputs: `taskkill.exe //F //IM WindowsHelperSuite.exe` (ignore errors if not running).
+2. **Run** the app: `dotnet run --project src/WindowsHelperSuite.App/WindowsHelperSuite.App.csproj` (background is fine).
+3. If the build fails, fix compile errors first, then run again.
+
+The app is tray-based; remind the user to check the **system tray** if no window appears.

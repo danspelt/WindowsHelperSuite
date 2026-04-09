@@ -25,6 +25,12 @@ public enum SpeechVoiceMode
 public class SpeechSettings
 {
     public bool EnableSpeechOnSelection { get; set; } = true;
+
+    /// <summary>Speak suggestions while moving the keyboard highlight (↑↓). Independent of selection speech.</summary>
+    public bool EnableSpeechOnHighlight { get; set; } = true;
+
+    /// <summary>Delay before speaking after highlight changes; reduces TTS spam when scrolling quickly (0–2000 ms).</summary>
+    public int HighlightSpeechDebounceMs { get; set; } = 200;
     public bool OnlySpeakOnHeadset { get; set; } = true;
     public string PreferredDeviceName { get; set; } = string.Empty;
 

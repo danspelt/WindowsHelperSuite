@@ -11,5 +11,12 @@ public interface IOverlayService
     void SetContextMode(string? contextSummary, string? fullSentenceWords = null);
     void MoveToNextPage();
     void MoveToPreviousPage();
+    /// <summary>Moves keyboard highlight among on-page suggestions (-1 = up/previous, +1 = down/next).</summary>
+    void MoveSuggestionHighlight(int delta);
+
+    /// <summary>Slot (1–9) of the keyboard-highlighted suggestion on the current page, if any.</summary>
+    int? GetHighlightedSuggestionSlot();
     event EventHandler<int>? SuggestionSelected;
+    /// <summary>Fired when keyboard highlight moves to a suggestion; string is display text.</summary>
+    event EventHandler<string?>? SuggestionHighlightChanged;
 }

@@ -333,7 +333,8 @@ public static class Win32Caret
     }
 
     /// <summary>
-    /// Keep overlay text close to what the control shows — do not collapse spaces or join words.
+    /// Normalize line breaks and collapse runs of Unicode whitespace to a single ASCII space so the overlay
+    /// sentence line does not glue words (tabs/NBSP/zero-width gaps from UIA often omit a visible gap).
     /// </summary>
     private static string NormalizeOverlayWhitespace(string s)
     {
@@ -342,7 +343,28 @@ public static class Win32Caret
             return string.Empty;
         }
 
-        return s.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Trim();
+        s = s.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Trim();
+        var sb = new System.Text.StringBuilder(s.Length);
+        var pendingSpace = false;
+        foreach (var ch in s)
+        {
+            if (char.IsWhiteSpace(ch))
+            {
+                pendingSpace = true;
+            }
+            else
+            {
+                if (pendingSpace && sb.Length > 0 && sb[^1] != ' ')
+                {
+                    sb.Append(' ');
+                }
+
+                pendingSpace = false;
+                sb.Append(ch);
+            }
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>Show the end of long text (caret is usually near the end).</summary>

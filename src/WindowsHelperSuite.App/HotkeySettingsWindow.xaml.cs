@@ -30,6 +30,8 @@ public partial class HotkeySettingsWindow : Window
 
     // ── Appearance pending state ──
     private int _pendingFontSize;
+    private string _pendingFontFamily = "Segoe UI";
+    private string _pendingFontWeight = "SemiBold";
     private double _pendingOpacity;
     private bool _pendingLargeText;
     private OverlayLayout _pendingLayout;
@@ -38,6 +40,14 @@ public partial class HotkeySettingsWindow : Window
     private string _pendingCard = "#1E1F2A";
     private string _pendingText = "#F0F0F5";
     private bool _suppressColorEvents;
+
+    private static readonly string[] FontFamilyOptions =
+        ["Segoe UI", "Arial", "Calibri", "Cambria", "Consolas", "Courier New", "Georgia",
+         "Impact", "Lucida Console", "Tahoma", "Times New Roman", "Trebuchet MS", "Verdana",
+         "Comic Sans MS", "Cascadia Code", "Cascadia Mono"];
+
+    private static readonly string[] FontWeightOptions =
+        ["Thin", "ExtraLight", "Light", "Normal", "Medium", "SemiBold", "Bold", "ExtraBold", "Black"];
 
     private static readonly string[] AccentPresets =
         ["#4ADE80", "#60A5FA", "#A78BFA", "#FB923C", "#F472B6", "#F87171", "#FACC15", "#34D399"];
@@ -144,6 +154,8 @@ public partial class HotkeySettingsWindow : Window
     {
         var ui = _settingsService.Settings.Ui;
         _pendingFontSize = Math.Clamp(ui.FontSize, 8, 36);
+        _pendingFontFamily = string.IsNullOrWhiteSpace(ui.FontFamily) ? "Segoe UI" : ui.FontFamily;
+        _pendingFontWeight = string.IsNullOrWhiteSpace(ui.FontWeight) ? "SemiBold" : ui.FontWeight;
         _pendingOpacity  = Math.Clamp(ui.Opacity * 100, 25, 100);
         _pendingLargeText = ui.LargeTextMode;
         _pendingLayout = ui.Layout;
@@ -159,6 +171,45 @@ public partial class HotkeySettingsWindow : Window
 
         FontSizeSlider.Value = _pendingFontSize;
         FontSizeLabel.Text   = _pendingFontSize.ToString();
+
+        // Font Family
+        FontFamilyCombo.Items.Clear();
+        foreach (var ff in FontFamilyOptions)
+        {
+            var item = new System.Windows.Controls.ComboBoxItem
+            {
+                Content = ff,
+                FontFamily = new System.Windows.Media.FontFamily(ff),
+                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xD8, 0xD8, 0xF0)),
+            };
+            FontFamilyCombo.Items.Add(item);
+            if (ff.Equals(_pendingFontFamily, StringComparison.OrdinalIgnoreCase))
+                FontFamilyCombo.SelectedItem = item;
+        }
+        FontFamilyCombo.SelectionChanged += (_, _) =>
+        {
+            if (FontFamilyCombo.SelectedItem is System.Windows.Controls.ComboBoxItem { Content: string f })
+                _pendingFontFamily = f;
+        };
+
+        // Font Weight
+        FontWeightCombo.Items.Clear();
+        foreach (var fw in FontWeightOptions)
+        {
+            var item = new System.Windows.Controls.ComboBoxItem
+            {
+                Content = fw,
+                Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xD8, 0xD8, 0xF0)),
+            };
+            FontWeightCombo.Items.Add(item);
+            if (fw.Equals(_pendingFontWeight, StringComparison.OrdinalIgnoreCase))
+                FontWeightCombo.SelectedItem = item;
+        }
+        FontWeightCombo.SelectionChanged += (_, _) =>
+        {
+            if (FontWeightCombo.SelectedItem is System.Windows.Controls.ComboBoxItem { Content: string w })
+                _pendingFontWeight = w;
+        };
 
         OpacitySlider.Value = _pendingOpacity;
         OpacityLabel.Text   = $"{(int)_pendingOpacity}%";
@@ -228,12 +279,22 @@ public partial class HotkeySettingsWindow : Window
             SpeechVoiceNameBox.TextChanged += (_, _) => _pendingSpeech.VoiceName = SpeechVoiceNameBox.Text.Trim();
             SpeechEnableSelection.Checked += (_, _) => _pendingSpeech.EnableSpeechOnSelection = true;
             SpeechEnableSelection.Unchecked += (_, _) => _pendingSpeech.EnableSpeechOnSelection = false;
+            SpeechEnableHighlight.Checked += (_, _) => _pendingSpeech.EnableSpeechOnHighlight = true;
+            SpeechEnableHighlight.Unchecked += (_, _) => _pendingSpeech.EnableSpeechOnHighlight = false;
+            SpeechHighlightDebounceSlider.ValueChanged += (_, _) =>
+            {
+                _pendingSpeech.HighlightSpeechDebounceMs = (int)Math.Round(SpeechHighlightDebounceSlider.Value);
+                SpeechHighlightDebounceLabel.Text = _pendingSpeech.HighlightSpeechDebounceMs.ToString();
+            };
             SpeechHeadsetOnly.Checked += (_, _) => _pendingSpeech.OnlySpeakOnHeadset = true;
             SpeechHeadsetOnly.Unchecked += (_, _) => _pendingSpeech.OnlySpeakOnHeadset = false;
             _speechUiWired = true;
         }
 
         SpeechEnableSelection.IsChecked = _pendingSpeech.EnableSpeechOnSelection;
+        SpeechEnableHighlight.IsChecked = _pendingSpeech.EnableSpeechOnHighlight;
+        SpeechHighlightDebounceSlider.Value = Math.Clamp(_pendingSpeech.HighlightSpeechDebounceMs, 0, 2000);
+        SpeechHighlightDebounceLabel.Text = _pendingSpeech.HighlightSpeechDebounceMs.ToString();
         SpeechHeadsetOnly.IsChecked = _pendingSpeech.OnlySpeakOnHeadset;
         SpeechRateSlider.Value = Math.Clamp(_pendingSpeech.SpeechRate, -2, 2);
         SpeechRateLabel.Text = _pendingSpeech.SpeechRate.ToString();
@@ -344,6 +405,46 @@ public partial class HotkeySettingsWindow : Window
         catch
         {
             return new SolidColorBrush(System.Windows.Media.Colors.Transparent);
+        }
+    }
+
+    // ── Color picker dialog handlers ──
+
+    private void AccentPreview_Click(object s, System.Windows.Input.MouseButtonEventArgs e) => AccentPick_Click(s, e);
+    private void BgPreview_Click(object s, System.Windows.Input.MouseButtonEventArgs e) => BgPick_Click(s, e);
+    private void CardPreview_Click(object s, System.Windows.Input.MouseButtonEventArgs e) => CardPick_Click(s, e);
+    private void TextPreview_Click(object s, System.Windows.Input.MouseButtonEventArgs e) => TextPick_Click(s, e);
+
+    private void AccentPick_Click(object sender, RoutedEventArgs e) =>
+        OpenColorPicker(_pendingAccent, hex => { _pendingAccent = hex; SetHexAndPreview(AccentHex, AccentPreview, hex); });
+    private void BgPick_Click(object sender, RoutedEventArgs e) =>
+        OpenColorPicker(_pendingBg, hex => { _pendingBg = hex; SetHexAndPreview(BgHex, BgPreview, hex); });
+    private void CardPick_Click(object sender, RoutedEventArgs e) =>
+        OpenColorPicker(_pendingCard, hex => { _pendingCard = hex; SetHexAndPreview(CardHex, CardPreview, hex); });
+    private void TextPick_Click(object sender, RoutedEventArgs e) =>
+        OpenColorPicker(_pendingText, hex => { _pendingText = hex; SetHexAndPreview(TextHex, TextPreview, hex); });
+
+    private static void OpenColorPicker(string currentHex, Action<string> onPicked)
+    {
+        using var dlg = new System.Windows.Forms.ColorDialog
+        {
+            FullOpen = true,
+            AnyColor = true,
+        };
+
+        // Pre-select the current color
+        try
+        {
+            var c = (WpfColor)System.Windows.Media.ColorConverter.ConvertFromString(currentHex);
+            dlg.Color = System.Drawing.Color.FromArgb(c.R, c.G, c.B);
+        }
+        catch { /* ignore bad hex */ }
+
+        if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            var picked = dlg.Color;
+            var hex = $"#{picked.R:X2}{picked.G:X2}{picked.B:X2}";
+            onPicked(hex);
         }
     }
 
@@ -636,18 +737,26 @@ public partial class HotkeySettingsWindow : Window
         switch (MainTabs.SelectedIndex)
         {
             case 0:
-                _pendingFontSize  = 14;
-                _pendingOpacity   = 100;
-                _pendingLargeText = false;
-                _pendingLayout    = OverlayLayout.Vertical;
-                _pendingAccent    = "#4ADE80";
-                _pendingBg        = "#0F0F14";
-                _pendingCard      = "#1E1F2A";
-                _pendingText      = "#F0F0F5";
+                _pendingFontSize   = 14;
+                _pendingFontFamily = "Segoe UI";
+                _pendingFontWeight = "SemiBold";
+                _pendingOpacity    = 100;
+                _pendingLargeText  = false;
+                _pendingLayout     = OverlayLayout.Vertical;
+                _pendingAccent     = "#4ADE80";
+                _pendingBg         = "#0F0F14";
+                _pendingCard       = "#1E1F2A";
+                _pendingText       = "#F0F0F5";
 
                 _suppressColorEvents = true;
                 FontSizeSlider.Value = _pendingFontSize;
                 FontSizeLabel.Text   = _pendingFontSize.ToString();
+                foreach (System.Windows.Controls.ComboBoxItem ci in FontFamilyCombo.Items)
+                    if (ci.Content is string s && s.Equals(_pendingFontFamily, StringComparison.OrdinalIgnoreCase))
+                    { FontFamilyCombo.SelectedItem = ci; break; }
+                foreach (System.Windows.Controls.ComboBoxItem ci in FontWeightCombo.Items)
+                    if (ci.Content is string s && s.Equals(_pendingFontWeight, StringComparison.OrdinalIgnoreCase))
+                    { FontWeightCombo.SelectedItem = ci; break; }
                 OpacitySlider.Value  = _pendingOpacity;
                 OpacityLabel.Text    = "100%";
                 LargeTextCheck.IsChecked   = false;
@@ -704,6 +813,8 @@ public partial class HotkeySettingsWindow : Window
         // ── Save appearance ──
         var ui = _settingsService.Settings.Ui;
         ui.FontSize               = _pendingFontSize;
+        ui.FontFamily             = _pendingFontFamily;
+        ui.FontWeight             = _pendingFontWeight;
         ui.Opacity                = Math.Clamp(_pendingOpacity / 100.0, 0.25, 1.0);
         ui.LargeTextMode          = _pendingLargeText;
         ui.Layout                 = _pendingLayout;

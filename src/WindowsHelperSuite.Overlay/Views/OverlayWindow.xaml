@@ -213,7 +213,8 @@
                                    FontFamily="Segoe UI"
                                    Foreground="{DynamicResource TextMuted}"
                                    VerticalAlignment="Center"
-                                   TextWrapping="NoWrap">
+                                   TextWrapping="Wrap"
+                                   MaxWidth="520">
                             <Run Text="Press " Foreground="{DynamicResource TextSecondary}"/>
                             <Run Text="1" FontWeight="Bold" Foreground="{DynamicResource AccentGreen}"/>
                             <Run Text="–" Foreground="{DynamicResource TextSecondary}"/>
@@ -223,6 +224,14 @@
                             <Run Text=" next · " Foreground="{DynamicResource TextSecondary}"/>
                             <Run Text="-" FontWeight="Bold" Foreground="{DynamicResource AccentBlue}"/>
                             <Run Text=" prev · " Foreground="{DynamicResource TextSecondary}"/>
+                            <Run Text="←" FontWeight="Bold" Foreground="{DynamicResource AccentBlue}"/>
+                            <Run Text=" del word · " Foreground="{DynamicResource TextSecondary}"/>
+                            <Run Text="↑↓" FontWeight="Bold" Foreground="{DynamicResource AccentBlue}"/>
+                            <Run Text=" highlight · " Foreground="{DynamicResource TextSecondary}"/>
+                            <Run Text="Enter" FontWeight="Bold" Foreground="{DynamicResource AccentGreen}"/>
+                            <Run Text=" pick · " Foreground="{DynamicResource TextSecondary}"/>
+                            <Run Text="Shift+Enter" FontWeight="SemiBold" Foreground="{DynamicResource TextMuted}"/>
+                            <Run Text=" newline · " Foreground="{DynamicResource TextSecondary}"/>
                             <Run Text="Esc" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondary}"/>
                             <Run Text=" close · " Foreground="{DynamicResource TextSecondary}"/>
                             <Run Text="`" FontWeight="Bold" Foreground="{DynamicResource AccentPurple}"/>

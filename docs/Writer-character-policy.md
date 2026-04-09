@@ -12,6 +12,12 @@ Characters that **extend** the partial word (and are copied into the sentence bu
 
 Everything else **does not** extend the current word.
 
+## Session start (“wake”) and caret recovery
+
+A Writer typing session starts (and `TypingStarted` fires) only when the user types a **Unicode letter** with a valid text caret. **Digits, symbols, punctuation, apostrophe, hyphen, and any other non-letter do not wake** the session or restore validated text input after a failed caret check—those keystrokes are ignored by the Writer hook until a letter is typed.
+
+Once a session is active, digits still **extend** the current word like any other word character (e.g. `covid19`), per `IsWordExtendingCharacter` above.
+
 ## Word boundaries (keyboard path)
 
 - **Whitespace** (`char.IsWhiteSpace`): completes the current word (if any), clears the partial word, then normalizes spaces in the sentence buffer (`AppendSentenceSeparatorLocked`).
