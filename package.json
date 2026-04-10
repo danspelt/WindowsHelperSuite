@@ -1,0 +1,11 @@
+{
+  "name": "windows-helper-suite",
+  "private": true,
+  "description": "Root scripts; .NET tray app lives under src/. Electron counselor app under StillSpace/.",
+  "scripts": {
+    "prepare": "npm install --prefix StillSpace --no-fund --no-audit",
+    "dev": "npm run dev --prefix StillSpace",
+    "build:stillspace": "npm run build --prefix StillSpace",
+    "dev:suite": "dotnet run --project src/WindowsHelperSuite.App/WindowsHelperSuite.App.csproj"
+  }
+}
