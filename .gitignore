@@ -1,3 +1,6 @@
+# Local API keys (Still Space / tools)
+.env
+**/.env
 
 bin/
 obj/

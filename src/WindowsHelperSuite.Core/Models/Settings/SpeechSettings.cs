@@ -31,7 +31,8 @@ public class SpeechSettings
 
     /// <summary>Delay before speaking after highlight changes; reduces TTS spam when scrolling quickly (0–2000 ms).</summary>
     public int HighlightSpeechDebounceMs { get; set; } = 200;
-    public bool OnlySpeakOnHeadset { get; set; } = true;
+    /// <summary>When true, speech runs only if the default output device name looks like headphones/headset (see HeadsetDetector).</summary>
+    public bool OnlySpeakOnHeadset { get; set; }
     public string PreferredDeviceName { get; set; } = string.Empty;
 
     /// <summary>Azure neural voice (e.g. en-US-AvaNeural). Empty uses the app default.</summary>

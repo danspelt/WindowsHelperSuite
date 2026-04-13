@@ -67,4 +67,57 @@ public sealed class WriterWordBufferPolicyTests
     [Fact]
     public void NormalizeWord_unicode_letters_preserved() =>
         WriterWordBufferPolicy.NormalizeWord("Café").Should().Be("café");
+
+    [Fact]
+    public void SplitLastWhitespaceToken_single_token()
+    {
+        WriterWordBufferPolicy.SplitLastWhitespaceToken("match", out var prefix, out var last);
+        prefix.Should().BeEmpty();
+        last.Should().Be("match");
+    }
+
+    [Fact]
+    public void SplitLastWhitespaceToken_two_tokens()
+    {
+        WriterWordBufferPolicy.SplitLastWhitespaceToken("hello match", out var prefix, out var last);
+        prefix.Should().Be("hello");
+        last.Should().Be("match");
+    }
+
+    [Fact]
+    public void TryResolveCompletedWordForCommit_fragment_after_mid_word_repair()
+    {
+        WriterWordBufferPolicy.TryResolveCompletedWordForCommit("match", "h", "bogus", out var word, out var before);
+        word.Should().Be("match");
+        before.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TryResolveCompletedWordForCommit_normal_word_equals_sentence_token()
+    {
+        WriterWordBufferPolicy.TryResolveCompletedWordForCommit("hello world", "world", "x", out var word, out var before);
+        word.Should().Be("world");
+        before.Should().Be("hello");
+    }
+
+    /// <summary>
+    /// After fixing matc→h, backspace must trim both buffers so retyping h does not produce matchh on the next commit.
+    /// </summary>
+    [Fact]
+    public void IsSentenceSuffixAlignedWithCurrentWord_allows_dual_backspace_for_suffix_after_mid_word_repair()
+    {
+        WriterWordBufferPolicy.IsSentenceSuffixAlignedWithCurrentWord("match", "h").Should().BeTrue();
+        // If sentence was accidentally matchh, one dual backspace restores match + empty word
+        WriterWordBufferPolicy.IsSentenceSuffixAlignedWithCurrentWord("matchh", "h").Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData("match", "match", true)]
+    [InlineData("hello match", "match", true)]
+    [InlineData("match", "h", true)]
+    [InlineData("matchh", "h", true)]
+    [InlineData("hello match", "h", true)]
+    [InlineData("a.", "a", false)]
+    public void IsSentenceSuffixAlignedWithCurrentWord_cases(string sentence, string word, bool aligned) =>
+        WriterWordBufferPolicy.IsSentenceSuffixAlignedWithCurrentWord(sentence, word).Should().Be(aligned);
 }

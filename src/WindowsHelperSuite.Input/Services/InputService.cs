@@ -243,6 +243,17 @@ public class InputService : IInputService, IDisposable
         return s;
     }
 
+    /// <summary>
+    /// Under <c>_bufferLock</c>: full word + text-before for <see cref="WordTyped"/> when a partial is committed.
+    /// </summary>
+    private void TryResolveWordCommitLocked(out string wordCompleted, out string textBeforeWord)
+    {
+        var w = _currentWord.ToString();
+        var sTrim = _currentSentence.ToString().TrimEnd();
+        var fallback = GetTextBeforeCurrentWordLocked();
+        WriterWordBufferPolicy.TryResolveCompletedWordForCommit(sTrim, w, fallback, out wordCompleted, out textBeforeWord);
+    }
+
     private void OnKeyPressed(object? sender, KeyEventArgs e)
     {
         if (!IsEnabled || _suppressHookProcessing)
@@ -423,13 +434,13 @@ public class InputService : IInputService, IDisposable
             else if (char.IsWhiteSpace(typedChar))
             {
                 string? wordCompleted = null;
-                string textBeforeWord;
+                string textBeforeWord = string.Empty;
                 lock (_bufferLock)
                 {
-                    textBeforeWord = GetTextBeforeCurrentWordLocked();
                     if (_currentWord.Length > 0)
                     {
-                        wordCompleted = _currentWord.ToString();
+                        TryResolveWordCommitLocked(out var wc, out textBeforeWord);
+                        wordCompleted = wc;
                         _currentWord.Clear();
                     }
 
@@ -451,13 +462,13 @@ public class InputService : IInputService, IDisposable
             {
                 string? wordCompleted = null;
                 string? sentenceCompleted = null;
-                string textBeforeWord;
+                string textBeforeWord = string.Empty;
                 lock (_bufferLock)
                 {
-                    textBeforeWord = GetTextBeforeCurrentWordLocked();
                     if (_currentWord.Length > 0)
                     {
-                        wordCompleted = _currentWord.ToString();
+                        TryResolveWordCommitLocked(out var wc, out textBeforeWord);
+                        wordCompleted = wc;
                         _currentWord.Clear();
                     }
 
@@ -502,7 +513,20 @@ public class InputService : IInputService, IDisposable
                 {
                     if (_currentWord.Length > 0)
                     {
-                        _currentWord.Length--;
+                        var s = _currentSentence.ToString();
+                        var w = _currentWord.ToString();
+                        if (WriterWordBufferPolicy.IsSentenceSuffixAlignedWithCurrentWord(s, w))
+                        {
+                            _currentWord.Length--;
+                            if (_currentSentence.Length > 0)
+                            {
+                                _currentSentence.Length--;
+                            }
+                        }
+                        else
+                        {
+                            _currentWord.Length--;
+                        }
                     }
                     else if (_currentSentence.Length > 0)
                     {
@@ -526,7 +550,20 @@ public class InputService : IInputService, IDisposable
                     {
                         if (_currentWord.Length > 0)
                         {
-                            _currentWord.Length--;
+                            var s = _currentSentence.ToString();
+                            var w = _currentWord.ToString();
+                            if (WriterWordBufferPolicy.IsSentenceSuffixAlignedWithCurrentWord(s, w))
+                            {
+                                _currentWord.Length--;
+                                if (_currentSentence.Length > 0)
+                                {
+                                    _currentSentence.Length--;
+                                }
+                            }
+                            else
+                            {
+                                _currentWord.Length--;
+                            }
                         }
                     }
 
@@ -561,10 +598,10 @@ public class InputService : IInputService, IDisposable
             string textBeforeWord = string.Empty;
             lock (_bufferLock)
             {
-                textBeforeWord = GetTextBeforeCurrentWordLocked();
                 if (_currentWord.Length > 0)
                 {
-                    wordCompleted = _currentWord.ToString();
+                    TryResolveWordCommitLocked(out var wc, out textBeforeWord);
+                    wordCompleted = wc;
                     _currentWord.Clear();
                 }
 

@@ -634,6 +634,9 @@
                                     <TextBlock Text="Horizontal shows suggestions side-by-side" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                                    <RadioButton x:Name="LayoutAuto" Content="Auto"
+                                                 Foreground="#9090C0" FontSize="13" Margin="0,0,10,0"
+                                                 GroupName="Layout"/>
                                     <RadioButton x:Name="LayoutVertical" Content="Vertical"
                                                  Foreground="#9090C0" FontSize="13" Margin="0,0,12,0"
                                                  GroupName="Layout"/>
@@ -641,6 +644,40 @@
                                                  Foreground="#9090C0" FontSize="13"
                                                  GroupName="Layout"/>
                                 </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,20">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Overlay vs caret" FontSize="14" Foreground="#D8D8F0"/>
+                                    <TextBlock Text="Place the suggestion bar above, below, or auto (prefer above)"
+                                               FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <ComboBox x:Name="OverlayCaretPlacementCombo" Grid.Column="1" MinWidth="140"
+                                          VerticalAlignment="Center" Margin="12,0,0,0"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,20">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="200"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="44"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Show/hide fade (ms)" FontSize="14" Foreground="#D8D8F0"/>
+                                    <TextBlock Text="0 = instant; default 110" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <Slider x:Name="OverlayFadeMsSlider" Grid.Column="1" Minimum="0" Maximum="600" TickFrequency="10"
+                                        IsSnapToTickEnabled="True" VerticalAlignment="Center" Margin="8,0"/>
+                                <TextBlock x:Name="OverlayFadeMsLabel" Grid.Column="2" Text="110" Foreground="#88BBFF"
+                                           FontFamily="Consolas" VerticalAlignment="Center"/>
                             </Grid>
                         </Border>
 
@@ -841,7 +878,11 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="Only when headset is default device" TextWrapping="Wrap" Foreground="#D8D8F0" VerticalAlignment="Center"/>
+                                <TextBlock TextWrapping="Wrap" Foreground="#D8D8F0" VerticalAlignment="Center">
+                                    <Run Text="Only when headset is default device"/>
+                                    <LineBreak/>
+                                    <Run Text="Uses device name heuristics; refreshes when the default output device changes." FontSize="10" Foreground="#6A6A92"/>
+                                </TextBlock>
                                 <CheckBox x:Name="SpeechHeadsetOnly" Grid.Column="1" VerticalAlignment="Center" Foreground="#88BBFF"/>
                             </Grid>
                         </Border>
@@ -920,6 +961,20 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Follow caret" Foreground="#D8D8F0" VerticalAlignment="Center"/>
                                 <CheckBox x:Name="WriterFollowCaret" Grid.Column="1" VerticalAlignment="Center" Foreground="#88BBFF"/>
+                            </Grid>
+                        </Border>
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Foreground="#D8D8F0" VerticalAlignment="Center" TextWrapping="Wrap">
+                                    <Run Text="Window title phrase hints"/>
+                                    <LineBreak/>
+                                    <Run Text="Opt-in: boost phrases when the window title looks like web mail (titles are not logged)." FontSize="10" Foreground="#6A6A92"/>
+                                </TextBlock>
+                                <CheckBox x:Name="WriterTitleHints" Grid.Column="1" VerticalAlignment="Center" Foreground="#88BBFF"/>
                             </Grid>
                         </Border>
                         <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">

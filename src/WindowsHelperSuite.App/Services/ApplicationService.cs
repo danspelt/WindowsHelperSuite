@@ -54,6 +54,7 @@ public class ApplicationService : IDisposable
     private readonly ConcurrentDictionary<string, Task<bool>> _vocabGateTasks = new(StringComparer.OrdinalIgnoreCase);
     private readonly IWriterVocabularyRemoteStore _remoteVocabulary;
     private readonly IChatService _chatService;
+    private readonly IAiSuggestionService _aiSuggestionService;
     private readonly IConversationStore _conversationStore;
     private readonly ChatOptions _chatOptions;
     private ChatWindow? _chatWindow;
@@ -84,6 +85,7 @@ public class ApplicationService : IDisposable
         var chatProvider = new OpenAiCompatibleChatProvider(_chatOptions, _loggingService);
         _chatService = new ChatService(chatProvider, _loggingService);
         _conversationStore = new JsonConversationStore(_loggingService);
+        _aiSuggestionService = new AiSuggestionService(_loggingService, BuildOverlayAiSettings);
 
         _trayIconService = new TrayIconService(_loggingService, _settingsService, ReloadHotkeys, OpenChat);
         _hotkeyService = new HotkeyService(_loggingService);
@@ -93,7 +95,7 @@ public class ApplicationService : IDisposable
             new CachingSecretFieldDetector(new SecretFieldDetector()),
             new CachingWriterOverlayExclusionDetector(new WriterOverlayExclusionDetector()));
         _typingModel = typingModel ?? new TypingModelService();
-        _predictionService = new PredictionService(_typingModel);
+        _predictionService = new PredictionService(_typingModel, () => _settingsService.Settings.Writer);
         if (writerContext != null)
         {
             _writerContext = writerContext;
@@ -133,8 +135,9 @@ public class ApplicationService : IDisposable
         RegisterHotkeyActions();
         RegisterDefaultHotkeys();
 
-        _hotkeyService.Start();
+        // Install the writer hook first, then hotkeys, so the hotkey LL hook runs before Input (last-installed = first in chain).
         _inputService.Start();
+        _hotkeyService.Start();
 
         _loggingService.Information("Application started (v4 - enhanced injection + key suppression)");
     }
@@ -337,6 +340,8 @@ public class ApplicationService : IDisposable
     private List<SuggestionItem> _currentSuggestions = [];
     private bool _hasValidTextInput = false;
     private long _lastSelectionTick;
+    private int _overlayAiGeneration;
+    private CancellationTokenSource? _overlayAiDebounceCts;
 
     private void ShowOverlay()
     {
@@ -441,6 +446,8 @@ public class ApplicationService : IDisposable
             return;
         }
 
+        _overlayService.SetOverlayStatusHint(null);
+
         var context = _inputService.GetSuggestionContextPrefix();
         var lastContextWord = context.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
         // Prefer live text from the focused control so the banner matches the real field (hook buffer can drift).
@@ -477,6 +484,219 @@ public class ApplicationService : IDisposable
             string.IsNullOrWhiteSpace(fullSentence) ? null : fullSentence);
 
         _overlayService.ShowSuggestions(suggestions);
+
+        ScheduleOverlayAiEnrichment();
+    }
+
+    private AiSettings BuildOverlayAiSettings()
+    {
+        var ai = _settingsService.Settings.Ai;
+        var model = string.IsNullOrWhiteSpace(ai.OverlayAiSuggestionModel) ? ai.Model : ai.OverlayAiSuggestionModel.Trim();
+        return new AiSettings
+        {
+            EnableAiSuggestions = ai.EnableOverlayAiSuggestions,
+            EnableAiPhraseCompletion = ai.EnableOverlayAiSuggestions,
+            ApiKey = ai.ApiKey,
+            Model = string.IsNullOrWhiteSpace(model) ? "gpt-4o-mini" : model,
+            ApiBaseUrl = string.IsNullOrWhiteSpace(ai.ApiBaseUrl) ? "https://api.openai.com/v1" : ai.ApiBaseUrl.Trim().TrimEnd('/'),
+            MaxAiSuggestions = Math.Clamp(ai.OverlayAiMaxSuggestions, 1, 9),
+            AiTimeoutMs = Math.Clamp(ai.OverlayAiTimeoutMs, 500, 30_000)
+        };
+    }
+
+    private void ScheduleOverlayAiEnrichment()
+    {
+        var aiWriter = _settingsService.Settings.Ai;
+        if (!aiWriter.EnableOverlayAiSuggestions)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(aiWriter.ApiKey))
+        {
+            DeferWriterUi(() =>
+            {
+                if (_hasValidTextInput)
+                {
+                    _overlayService.SetOverlayStatusHint("AI overlay: add an API key in AI settings to enable cloud suggestions.");
+                }
+            });
+            return;
+        }
+
+        _overlayAiDebounceCts?.Cancel();
+        _overlayAiDebounceCts?.Dispose();
+        _overlayAiDebounceCts = new CancellationTokenSource();
+        var debounceToken = _overlayAiDebounceCts.Token;
+        var gen = ++_overlayAiGeneration;
+
+        _ = Task.Run(() => RunOverlayAiEnrichmentAsync(gen, debounceToken));
+    }
+
+    private async Task RunOverlayAiEnrichmentAsync(int gen, CancellationToken debounceToken)
+    {
+        try
+        {
+            var debounceMs = Math.Clamp(_settingsService.Settings.Ai.OverlayAiDebounceMs, 0, 2000);
+            if (debounceMs > 0)
+            {
+                await Task.Delay(debounceMs, debounceToken).ConfigureAwait(false);
+            }
+
+            if (debounceToken.IsCancellationRequested || gen != _overlayAiGeneration)
+            {
+                return;
+            }
+
+            var aiWriter = _settingsService.Settings.Ai;
+            if (!aiWriter.EnableOverlayAiSuggestions || string.IsNullOrWhiteSpace(aiWriter.ApiKey))
+            {
+                return;
+            }
+
+            var context = _inputService.GetSuggestionContextPrefix();
+            var word = _inputService.GetCurrentWord();
+            var fullSentence = Win32Caret.TryGetTextForOverlayContext(out var liveFieldText)
+                ? liveFieldText
+                : _inputService.GetFullSentenceForOverlay();
+
+            var lineForAi = string.IsNullOrWhiteSpace(fullSentence)
+                ? (string.IsNullOrWhiteSpace(context) ? word : $"{context} {word}".Trim())
+                : fullSentence;
+
+            var requestFingerprint = context + "\u001f" + word + "\u001f" + lineForAi;
+
+            var maxAi = Math.Clamp(aiWriter.OverlayAiMaxSuggestions, 1, 9);
+            var request = new AiSuggestionRequest
+            {
+                CurrentText = lineForAi,
+                CurrentWord = word,
+                MaxSuggestions = maxAi
+            };
+
+            using var apiTimeout = new CancellationTokenSource(aiWriter.OverlayAiTimeoutMs);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(debounceToken, apiTimeout.Token);
+
+            var aiResults = await _aiSuggestionService.GetPhraseSuggestionsAsync(request, linked.Token).ConfigureAwait(false);
+
+            if (gen != _overlayAiGeneration || aiResults.Count == 0)
+            {
+                return;
+            }
+
+            DeferWriterUi(() =>
+            {
+                if (gen != _overlayAiGeneration || !_hasValidTextInput)
+                {
+                    return;
+                }
+
+                var ctxNow = _inputService.GetSuggestionContextPrefix();
+                var wNow = _inputService.GetCurrentWord();
+                var fullNow = Win32Caret.TryGetTextForOverlayContext(out var liveNow)
+                    ? liveNow
+                    : _inputService.GetFullSentenceForOverlay();
+                var lineNow = string.IsNullOrWhiteSpace(fullNow)
+                    ? (string.IsNullOrWhiteSpace(ctxNow) ? wNow : $"{ctxNow} {wNow}".Trim())
+                    : fullNow;
+                var fpNow = ctxNow + "\u001f" + wNow + "\u001f" + lineNow;
+
+                if (!string.Equals(requestFingerprint, fpNow, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                List<SuggestionItem> freshLocal;
+                lock (_writerStateLock)
+                {
+                    freshLocal = _predictionService.GetSuggestions(ctxNow, wNow, _writerContext.GetSnapshot()).ToList();
+                }
+
+                var merged = MergeAiOverlaySuggestions(freshLocal, aiResults, maxAi);
+                lock (_writerStateLock)
+                {
+                    _currentSuggestions = merged;
+                }
+
+                _overlayService.SetOverlayStatusHint(null);
+                _overlayService.ShowSuggestions(merged);
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            /* debounce or API timeout — no overlay hint (typing continues) */
+        }
+        catch (Exception ex)
+        {
+            _loggingService.Debug($"Overlay AI enrichment: {ex.Message}");
+            DeferWriterUi(() =>
+            {
+                if (_hasValidTextInput && _settingsService.Settings.Ai.EnableOverlayAiSuggestions)
+                {
+                    _overlayService.SetOverlayStatusHint("AI suggestions unavailable — using local word bank only.");
+                }
+            });
+        }
+    }
+
+    private static List<SuggestionItem> MergeAiOverlaySuggestions(
+        IReadOnlyList<SuggestionItem> local,
+        IReadOnlyList<AiSuggestionResult> aiResults,
+        int maxAiSlots)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var s in local)
+        {
+            seen.Add(s.DisplayText.Trim());
+        }
+
+        var merged = new List<SuggestionItem>();
+        var aiAdded = 0;
+        foreach (var r in aiResults)
+        {
+            if (aiAdded >= maxAiSlots || merged.Count >= 9)
+            {
+                break;
+            }
+
+            var t = r.Text.Trim();
+            if (t.Length == 0 || t.Length > 120)
+            {
+                continue;
+            }
+
+            if (seen.Contains(t))
+            {
+                continue;
+            }
+
+            seen.Add(t);
+            merged.Add(new SuggestionItem
+            {
+                DisplayText = t,
+                InsertText = string.Empty,
+                Kind = SuggestionKind.AiSuggestion,
+                Score = 5200 - aiAdded * 14
+            });
+            aiAdded++;
+        }
+
+        foreach (var s in local)
+        {
+            if (merged.Count >= 9)
+            {
+                break;
+            }
+
+            merged.Add(s);
+        }
+
+        for (var i = 0; i < merged.Count; i++)
+        {
+            merged[i].Slot = i + 1;
+        }
+
+        return merged;
     }
 
     private void OnSuggestionHighlightChanged(object? sender, string? displayText)
@@ -646,6 +866,11 @@ public class ApplicationService : IDisposable
         {
             _trayIconService.ShowSettings();
         });
+
+        _hotkeyService.RegisterAction("OpenStillSpace", () =>
+        {
+            StillSpaceHotkey.OpenOrFocus(_loggingService);
+        });
     }
 
     private void ShowModeMenu()
@@ -676,6 +901,7 @@ public class ApplicationService : IDisposable
             _hotkeyService.RegisterHotkey("FixClipboardCapitalization", "Ctrl+Shift+C");
             _hotkeyService.RegisterHotkey("OpenModeMenu", _settingsService.Settings.ModeSystem.MenuHotkeyGesture, true);
             _hotkeyService.RegisterHotkey("OpenSettings", "Ctrl+F3");
+            _hotkeyService.RegisterHotkey("OpenStillSpace", "Ctrl+F4", true);
 
             _loggingService.Information("Registered default hotkeys");
         }
@@ -683,7 +909,9 @@ public class ApplicationService : IDisposable
         {
             foreach (var binding in settings.Where(b => b.Enabled))
             {
-                var consume = string.Equals(binding.ActionName, "OpenModeMenu", StringComparison.OrdinalIgnoreCase);
+                var consume =
+                    string.Equals(binding.ActionName, "OpenModeMenu", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(binding.ActionName, "OpenStillSpace", StringComparison.OrdinalIgnoreCase);
                 _hotkeyService.RegisterHotkey(binding.ActionName, binding.Gesture, consume);
             }
 
@@ -696,6 +924,14 @@ public class ApplicationService : IDisposable
                     _settingsService.Settings.ModeSystem.MenuHotkeyGesture,
                     true);
             }
+
+            var stillEnabled = settings.FirstOrDefault(b =>
+                b.Enabled
+                && string.Equals(b.ActionName, "OpenStillSpace", StringComparison.OrdinalIgnoreCase));
+            if (stillEnabled == null)
+            {
+                _hotkeyService.RegisterHotkey("OpenStillSpace", "Ctrl+F4", true);
+            }
         }
     }
 
@@ -703,7 +939,7 @@ public class ApplicationService : IDisposable
     [
         "VolumeUp", "VolumeDown", "VolumeMute", "WriterRefresh",
         "ToggleOverlay", "PauseWriter", "AddToWordBank", "AddPhraseToWordBank",
-        "FixClipboardCapitalization", "OpenModeMenu", "OpenSettings",
+        "FixClipboardCapitalization", "OpenModeMenu", "OpenSettings", "OpenStillSpace",
     ];
 
     private void ReloadHotkeys()
@@ -714,7 +950,8 @@ public class ApplicationService : IDisposable
         }
 
         RegisterDefaultHotkeys();
-        _loggingService.Information("Hotkeys reloaded from settings");
+        ApplySpeechSettings();
+        _loggingService.Information("Hotkeys and speech settings reloaded from settings");
     }
 
     private string _previousWord = string.Empty;
@@ -1261,6 +1498,10 @@ public class ApplicationService : IDisposable
 
     public void Dispose()
     {
+        _overlayAiDebounceCts?.Cancel();
+        _overlayAiDebounceCts?.Dispose();
+        _overlayAiDebounceCts = null;
+
         _highlightSpeechCts?.Cancel();
         _highlightSpeechCts?.Dispose();
         _highlightSpeechCts = null;
@@ -1287,6 +1528,11 @@ public class ApplicationService : IDisposable
         if (_chatService is IDisposable chatDisposable)
         {
             chatDisposable.Dispose();
+        }
+
+        if (_aiSuggestionService is IDisposable aiSuggestDisposable)
+        {
+            aiSuggestDisposable.Dispose();
         }
 
         _aiVocabGate.Dispose();

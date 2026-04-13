@@ -1,6 +1,7 @@
 using System.Text.Json;
 using WindowsHelperSuite.Core.Interfaces;
 using WindowsHelperSuite.Core.Models;
+using WindowsHelperSuite.Core.Models.Settings;
 using WindowsHelperSuite.Core.Models.Writer;
 
 namespace WindowsHelperSuite.Prediction.Services;
@@ -29,10 +30,12 @@ public class PredictionService : IPredictionService, IDisposable
     private readonly LinkedList<string> _recentlyAccepted = new();
 
     private readonly ITypingModel? _typingModel;
+    private readonly Func<WriterSettings>? _getWriterSettings;
 
-    public PredictionService(ITypingModel? typingModel = null)
+    public PredictionService(ITypingModel? typingModel = null, Func<WriterSettings>? getWriterSettings = null)
     {
         _typingModel = typingModel;
+        _getWriterSettings = getWriterSettings;
         _storagePath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "WindowsHelperSuite",
@@ -156,19 +159,26 @@ public class PredictionService : IPredictionService, IDisposable
         }
     }
 
-    private static double ContextScoreMultiplier(WriterContextSnapshot ctx, SuggestionKind kind)
+    private double ContextScoreMultiplier(WriterContextSnapshot ctx, SuggestionKind kind)
     {
         if (kind != SuggestionKind.PhraseCompletion)
         {
             return 1.0;
         }
 
-        return ctx.Mode switch
+        var mult = ctx.Mode switch
         {
             WriterTypingMode.Chat => 1.12,
             WriterTypingMode.Email => 1.08,
             _ => 1.0
         };
+
+        if (_getWriterSettings?.Invoke().UseWindowTitleForPhraseHints == true)
+        {
+            mult *= WriterTitleContextHints.PhraseBoostFromWindowTitle(ctx.ForegroundWindowTitle);
+        }
+
+        return mult;
     }
 
     private void AppendTypoCorrectionSuggestions(List<SuggestionCandidate> suggestions, string normalizedWord)

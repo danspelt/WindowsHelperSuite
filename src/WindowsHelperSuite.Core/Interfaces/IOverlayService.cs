@@ -9,6 +9,9 @@ public interface IOverlayService
     /// <param name="contextSummary">Short hint (e.g. completing "x" after "y").</param>
     /// <param name="fullSentenceWords">All words in the current sentence from the writer buffer (optional).</param>
     void SetContextMode(string? contextSummary, string? fullSentenceWords = null);
+
+    /// <summary>Small non-blocking footer hint (e.g. AI status). Null clears.</summary>
+    void SetOverlayStatusHint(string? message);
     void MoveToNextPage();
     void MoveToPreviousPage();
     /// <summary>Moves keyboard highlight among on-page suggestions (-1 = up/previous, +1 = down/next).</summary>

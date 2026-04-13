@@ -1,8 +1,8 @@
 using WindowsHelperSuite.Core.Interfaces;
 using WindowsHelperSuite.Core.Models;
 using WindowsHelperSuite.Core.Models.Settings;
-using WindowsHelperSuite.Infrastructure.Hooks;
 using WindowsHelperSuite.Overlay.Views;
+using WindowsHelperSuite.Infrastructure.Hooks;
 using System.Windows;
 
 namespace WindowsHelperSuite.Overlay.Services;
@@ -49,11 +49,17 @@ public class OverlayService : IOverlayService, IDisposable
     {
         RunOnUiThread(() =>
         {
+            _overlayWindow?.SetOverlayStatusHint(null);
             _overlayWindow?.HideSuggestions();
             // Reset layout lock when hiding so next show can re-detect
             _overlayWindow?.ResetLayoutLock();
         });
         _loggingService.Debug("Overlay hidden, layout lock reset");
+    }
+
+    public void SetOverlayStatusHint(string? message)
+    {
+        RunOnUiThread(() => _overlayWindow?.SetOverlayStatusHint(message));
     }
 
     public void MoveToNextPage()
@@ -157,22 +163,42 @@ public class OverlayService : IOverlayService, IDisposable
 
     public void PositionNearCaret(int x, int y)
     {
-        // Fallback method - use provided coordinates
         EnsureWindowCreated();
-        RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, ScreenPosition.Above));
+        var pos = MapCaretPlacement();
+        RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, pos));
+    }
+
+    private ScreenPosition MapCaretPlacement() =>
+        _settingsService.Settings.Ui.OverlayCaretPlacement switch
+        {
+            WriterOverlayCaretPlacement.Below => ScreenPosition.Below,
+            WriterOverlayCaretPlacement.Above => ScreenPosition.Above,
+            _ => ScreenPosition.Auto,
+        };
+
+    /// <summary>Reference point for auto layout (horizontal vs vertical) and fallbacks.</summary>
+    private static void TryGetLayoutReferencePoint(out int x, out int y)
+    {
+        if (Win32Caret.GetCaretPosition(out x, out y))
+        {
+            return;
+        }
+
+        var screen = System.Windows.SystemParameters.WorkArea;
+        x = (int)(screen.Left + screen.Width / 2);
+        y = (int)(screen.Top + screen.Height / 2);
     }
 
     private void PositionAtCaret()
     {
         EnsureWindowCreated();
 
-        // Apply current layout setting
+        var pos = MapCaretPlacement();
         RunOnUiThread(() => _overlayWindow?.SetLayout(_layout));
 
-        // Try to get actual caret position
         if (Win32Caret.GetCaretPosition(out var x, out var y))
         {
-            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, ScreenPosition.Above));
+            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, pos));
             if (x != _lastLogCaretX || y != _lastLogCaretY)
             {
                 _lastLogCaretX = x;
@@ -182,11 +208,10 @@ public class OverlayService : IOverlayService, IDisposable
         }
         else
         {
-            // Fallback to screen center
             var screen = System.Windows.SystemParameters.WorkArea;
             var centerX = (int)(screen.Left + screen.Width / 2);
             var centerY = (int)(screen.Top + screen.Height / 2);
-            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(centerX, centerY, ScreenPosition.Above));
+            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(centerX, centerY, pos));
             if (centerX != _lastLogCaretX || centerY != _lastLogCaretY)
             {
                 _lastLogCaretX = centerX;
@@ -222,6 +247,7 @@ public class OverlayService : IOverlayService, IDisposable
             })
             .ToList();
 
+        TryGetLayoutReferencePoint(out var layoutX, out var layoutY);
         RunOnUiThread(() =>
         {
             if (_overlayWindow == null)
@@ -233,8 +259,9 @@ public class OverlayService : IOverlayService, IDisposable
             _overlayWindow.SetLayout(_layout);
             _overlayWindow.ApplyUiSettings(ui.FontSize, ui.Opacity, ui.LargeTextMode,
                 ui.AccentColor, ui.OverlayBackgroundColor, ui.CardColor, ui.TextColor,
-                ui.FontFamily, ui.FontWeight);
-            _overlayWindow.ShowSuggestions(_currentPageSuggestions, _currentPage, _totalPages);
+                ui.FontFamily, ui.FontWeight, ui.OverlayFadeTransitionMs);
+            _overlayWindow.ShowSuggestions(_currentPageSuggestions, _currentPage, _totalPages,
+                layoutX, layoutY, ui.OverlayFadeTransitionMs);
         });
         if (_currentPageSuggestions.Count != _lastLogPageSuggestionCount
             || _currentPage != _lastLogSuggestionPageIndex)
@@ -261,7 +288,7 @@ public class OverlayService : IOverlayService, IDisposable
                 _overlayWindow.SetLayout(_layout);
                 _overlayWindow.ApplyUiSettings(ui.FontSize, ui.Opacity, ui.LargeTextMode,
                     ui.AccentColor, ui.OverlayBackgroundColor, ui.CardColor, ui.TextColor,
-                    ui.FontFamily, ui.FontWeight);
+                    ui.FontFamily, ui.FontWeight, ui.OverlayFadeTransitionMs);
                 _overlayWindow.SuggestionSelected += OnSuggestionSelected;
                 _overlayWindow.SuggestionHighlightChanged += OnSuggestionHighlightChanged;
                 _overlayWindow.NextPageRequested += (s, e) => MoveToNextPage();

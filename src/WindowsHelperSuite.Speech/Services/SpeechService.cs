@@ -12,6 +12,7 @@ public sealed class SpeechService : ISpeechService, IDisposable
     private readonly Func<SpeechSettings> _getSettings;
     private readonly ILoggingService? _log;
     private readonly HeadsetDetector _headsetDetector = new();
+    private readonly AudioEndpointChangeNotifier? _audioEndpointNotifier;
     private readonly AzureSpeechEngine _azure = new();
     private readonly EdgeTtsEngine _edge = new();
     private readonly WindowsSpeechEngine _windows;
@@ -45,7 +46,19 @@ public sealed class SpeechService : ISpeechService, IDisposable
         _windows = new WindowsSpeechEngine(log);
 
         _headsetConnected = _headsetDetector.IsHeadsetConnected();
-        _deviceCheckTimer = new System.Timers.Timer(5000) { AutoReset = true };
+        try
+        {
+            _audioEndpointNotifier = new AudioEndpointChangeNotifier(() =>
+            {
+                _headsetConnected = _headsetDetector.IsHeadsetConnected();
+            });
+        }
+        catch
+        {
+            _audioEndpointNotifier = null;
+        }
+
+        _deviceCheckTimer = new System.Timers.Timer(2000) { AutoReset = true };
         _deviceCheckTimer.Elapsed += (_, _) => _headsetConnected = _headsetDetector.IsHeadsetConnected();
         _deviceCheckTimer.Start();
     }
@@ -129,6 +142,9 @@ public sealed class SpeechService : ISpeechService, IDisposable
         }
     }
 
+    /// <summary>
+    /// Speaks a short fragment (e.g. completed word). Replaces any prior queued item so rapid typing does not backlog TTS.
+    /// </summary>
     public void SpeakQueued(string text, bool ignoreTypingCooldown = false)
     {
         var normalizedText = NormalizeSpokenText(text);
@@ -342,6 +358,7 @@ public sealed class SpeechService : ISpeechService, IDisposable
         _disposed = true;
         _deviceCheckTimer.Stop();
         _deviceCheckTimer.Dispose();
+        _audioEndpointNotifier?.Dispose();
         ClearQueue();
         CancelActiveSynthesis();
         lock (_speakCtsLock)

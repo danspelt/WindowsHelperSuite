@@ -3,7 +3,8 @@ using NAudio.CoreAudioApi;
 namespace WindowsHelperSuite.Speech.Services;
 
 /// <summary>
-/// Detects an active render device that looks like a headset (privacy / UX gate).
+/// Detects whether the <b>default</b> playback (render) device looks like headphones/headset — matches
+/// "only when headset is default" in settings. Speaking through random Bluetooth endpoints that are not default is not treated as OK.
 /// </summary>
 public sealed class HeadsetDetector
 {
@@ -20,17 +21,13 @@ public sealed class HeadsetDetector
         try
         {
             using var enumerator = new MMDeviceEnumerator();
-            var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
-
-            foreach (var device in devices)
+            using var defaultDevice = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+            var name = defaultDevice.FriendlyName ?? "";
+            foreach (var keyword in HeadsetKeywords)
             {
-                var name = device.FriendlyName?.ToLowerInvariant() ?? "";
-                foreach (var keyword in HeadsetKeywords)
+                if (name.Contains(keyword, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (name.Contains(keyword, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
+                    return true;
                 }
             }
         }

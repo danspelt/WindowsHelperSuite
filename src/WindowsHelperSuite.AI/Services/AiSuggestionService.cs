@@ -1,54 +1,67 @@
-using System.Collections.Concurrent;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using WindowsHelperSuite.AI.Models;
 using WindowsHelperSuite.Core.Interfaces;
 
 namespace WindowsHelperSuite.AI.Services;
 
 /// <summary>
-/// AI suggestion service that provides phrase completions.
-/// Implements timeout and fallback to ensure typing is never blocked.
+/// OpenAI-compatible chat completions for writer overlay phrase suggestions.
 /// </summary>
-public class AiSuggestionService : IAiSuggestionService
+public sealed class AiSuggestionService : IAiSuggestionService, IDisposable
 {
-    private readonly ILoggingService _loggingService;
-    private readonly HttpClient _httpClient;
-    private readonly AiSettings _settings;
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
-    public AiSuggestionService(ILoggingService loggingService, AiSettings settings)
+    private readonly ILoggingService _loggingService;
+    private readonly Func<AiSettings> _getSettings;
+    private readonly HttpClient _httpClient = new();
+
+    public AiSuggestionService(ILoggingService loggingService, Func<AiSettings> getSettings)
     {
         _loggingService = loggingService;
-        _settings = settings;
-        _httpClient = new HttpClient { Timeout = TimeSpan.FromMilliseconds(settings.AiTimeoutMs) };
+        _getSettings = getSettings;
     }
+
+    public void Dispose() => _httpClient.Dispose();
 
     public async Task<IReadOnlyList<AiSuggestionResult>> GetPhraseSuggestionsAsync(
         AiSuggestionRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (!_settings.EnableAiSuggestions || !_settings.EnableAiPhraseCompletion)
+        var settings = _getSettings();
+        if (!settings.EnableAiSuggestions || !settings.EnableAiPhraseCompletion)
         {
             return Array.Empty<AiSuggestionResult>();
         }
 
-        // Create a timeout token source
-        using var timeoutCts = new CancellationTokenSource(_settings.AiTimeoutMs);
+        if (string.IsNullOrWhiteSpace(settings.ApiKey))
+        {
+            _loggingService.Debug("Overlay AI: no API key, skipping");
+            return Array.Empty<AiSuggestionResult>();
+        }
+
+        using var timeoutCts = new CancellationTokenSource(settings.AiTimeoutMs);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
         try
         {
-            var suggestions = await GetSuggestionsFromAiAsync(request, linkedCts.Token);
-            return suggestions.Take(_settings.MaxAiSuggestions).ToList();
+            var suggestions = await GetSuggestionsFromAiAsync(request, settings, linkedCts.Token);
+            return suggestions.Take(Math.Clamp(settings.MaxAiSuggestions, 1, 9)).ToList();
         }
         catch (OperationCanceledException)
         {
-            _loggingService.Debug("AI suggestion request timed out or was cancelled");
+            _loggingService.Debug("Overlay AI request timed out or was cancelled");
             return Array.Empty<AiSuggestionResult>();
         }
         catch (Exception ex)
         {
-            _loggingService.Warning($"AI suggestion failed: {ex.Message}");
+            _loggingService.Warning($"Overlay AI failed: {ex.Message}");
             return Array.Empty<AiSuggestionResult>();
         }
     }
@@ -57,48 +70,154 @@ public class AiSuggestionService : IAiSuggestionService
         string currentText,
         CancellationToken cancellationToken = default)
     {
-        // Quick completions use a simpler, faster approach
-        // This is a placeholder implementation - integrate with your preferred AI provider
-        await Task.Delay(1, cancellationToken); // Minimal async work
+        await Task.Delay(1, cancellationToken).ConfigureAwait(false);
         return Array.Empty<string>();
     }
 
     private async Task<IReadOnlyList<AiSuggestionResult>> GetSuggestionsFromAiAsync(
         AiSuggestionRequest request,
+        AiSettings settings,
         CancellationToken cancellationToken)
     {
-        // Placeholder for AI integration
-        // In production, this would call OpenAI, Azure, or local LLM
-        // For now, return empty to ensure the app works without AI configured
-
-        if (string.IsNullOrEmpty(_settings.ApiKey))
+        var max = Math.Clamp(request.MaxSuggestions > 0 ? request.MaxSuggestions : settings.MaxAiSuggestions, 1, 9);
+        var fullLine = request.CurrentText?.Trim() ?? "";
+        if (fullLine.Length > 1200)
         {
-            _loggingService.Debug("No AI API key configured, skipping AI suggestions");
+            fullLine = fullLine[^1200..];
+        }
+
+        var system = $"""
+            You complete text for a Windows typing-assist overlay. The user sends the FULL line so far (whole sentence or field). Use it for grammar and meaning.
+
+            Return ONLY the next fragment to type. Do NOT repeat any substring from their line. Prefer the shortest natural continuation (usually one word; a few words only if grammar requires it). Each line under 80 characters.
+
+            Output exactly one suggestion per line: no numbers, bullets, quotes, labels, or explanations. At most {max} lines total. If nothing fits, output exactly: NONE
+            """;
+
+        var user = new StringBuilder();
+        user.AppendLine($"Return up to {max} distinct continuations (one per line).");
+        if (!string.IsNullOrWhiteSpace(request.CurrentWord))
+        {
+            user.AppendLine($"Partial word being typed (may be empty): \"{request.CurrentWord.Trim()}\"");
+        }
+
+        user.AppendLine("Full line so far:");
+        user.AppendLine(fullLine.Length > 0 ? fullLine : "(empty)");
+
+        var model = string.IsNullOrWhiteSpace(settings.Model) ? "gpt-4o-mini" : settings.Model.Trim();
+        var payload = new
+        {
+            model,
+            messages = new object[]
+            {
+                new { role = "system", content = system },
+                new { role = "user", content = user.ToString() }
+            },
+            temperature = 0.25,
+            max_tokens = 128
+        };
+
+        var baseUrl = (settings.ApiBaseUrl ?? "https://api.openai.com/v1").TrimEnd('/');
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/chat/completions")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload, JsonOpts), Encoding.UTF8, "application/json")
+        };
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.ApiKey!.Trim());
+
+        using var res = await _httpClient.SendAsync(req, cancellationToken).ConfigureAwait(false);
+        var body = await res.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!res.IsSuccessStatusCode)
+        {
+            _loggingService.Warning($"Overlay AI HTTP {(int)res.StatusCode}: {Truncate(body, 200)}");
             return Array.Empty<AiSuggestionResult>();
         }
 
-        // Example OpenAI integration structure:
-        // var prompt = BuildPrompt(request);
-        // var response = await CallOpenAiAsync(prompt, cancellationToken);
-        // return ParseResponse(response);
-
-        await Task.CompletedTask;
-        return Array.Empty<AiSuggestionResult>();
-    }
-
-    private string BuildPrompt(AiSuggestionRequest request)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("You are a writing assistant. Given the current text, suggest the next few words or phrases that would naturally follow.");
-        sb.AppendLine("Return only the suggestions, one per line, no numbering, no explanations.");
-        sb.AppendLine();
-        sb.AppendLine($"Current text: \"{request.CurrentText}\"");
-        if (!string.IsNullOrEmpty(request.PreviousSentence))
+        string content;
+        try
         {
-            sb.AppendLine($"Previous context: \"{request.PreviousSentence}\"");
+            using var doc = JsonDocument.Parse(body);
+            content = doc.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString()?
+                .Trim() ?? "";
         }
-        sb.AppendLine();
-        sb.AppendLine($"Suggest {request.MaxSuggestions} natural continuations:");
-        return sb.ToString();
+        catch (Exception ex)
+        {
+            _loggingService.Warning($"Overlay AI bad JSON: {ex.Message}");
+            return Array.Empty<AiSuggestionResult>();
+        }
+
+        return ParseSuggestionLines(content, max);
     }
+
+    private static IReadOnlyList<AiSuggestionResult> ParseSuggestionLines(string content, int max)
+    {
+        var results = new List<AiSuggestionResult>();
+        foreach (var rawLine in content.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var line = StripListPrefix(rawLine).Trim();
+            if (line.Length == 0 || line.Length > 120)
+            {
+                continue;
+            }
+
+            if (line.StartsWith('"') && line.EndsWith('"') && line.Length >= 2)
+            {
+                line = line[1..^1].Trim();
+            }
+
+            if (string.Equals(line, "NONE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(line, "NONE.", StringComparison.OrdinalIgnoreCase))
+            {
+                break;
+            }
+
+            var isPhrase = line.Contains(' ', StringComparison.Ordinal);
+            results.Add(new AiSuggestionResult
+            {
+                Text = line,
+                Confidence = 0.85,
+                IsPhraseCompletion = isPhrase
+            });
+
+            if (results.Count >= max)
+            {
+                break;
+            }
+        }
+
+        return results;
+    }
+
+    private static string StripListPrefix(string line)
+    {
+        var s = line.Trim();
+        if (s.Length >= 2 && s[0] == '-' && char.IsWhiteSpace(s[1]))
+        {
+            return s[2..].TrimStart();
+        }
+
+        if (s.Length >= 2 && s[0] == '•' && char.IsWhiteSpace(s[1]))
+        {
+            return s[2..].TrimStart();
+        }
+
+        var i = 0;
+        while (i < s.Length && char.IsDigit(s[i]))
+        {
+            i++;
+        }
+
+        if (i > 0 && i < s.Length && s[i] is '.' or ')')
+        {
+            return s[(i + 1)..].TrimStart();
+        }
+
+        return s;
+    }
+
+    private static string Truncate(string s, int max) =>
+        s.Length <= max ? s : s[..max] + "…";
 }

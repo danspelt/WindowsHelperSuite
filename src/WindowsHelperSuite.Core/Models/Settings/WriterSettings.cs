@@ -14,4 +14,10 @@ public class WriterSettings
 
     /// <summary>When auto-cap is on, normalize a lone typed "i" to "I".</summary>
     public bool CapitalizeSingleLetterI { get; set; } = true;
+
+    /// <summary>
+    /// When true, boost phrase suggestions using lightweight substring checks on the foreground window title
+    /// (e.g. web mail). Off by default for privacy; titles are not logged.
+    /// </summary>
+    public bool UseWindowTitleForPhraseHints { get; set; }
 }

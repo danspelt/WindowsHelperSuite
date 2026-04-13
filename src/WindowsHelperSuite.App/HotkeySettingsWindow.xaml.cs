@@ -35,6 +35,8 @@ public partial class HotkeySettingsWindow : Window
     private double _pendingOpacity;
     private bool _pendingLargeText;
     private OverlayLayout _pendingLayout;
+    private WriterOverlayCaretPlacement _pendingOverlayCaretPlacement = WriterOverlayCaretPlacement.Auto;
+    private int _pendingOverlayFadeMs = 110;
     private string _pendingAccent = "#4ADE80";
     private string _pendingBg = "#0F0F14";
     private string _pendingCard = "#1E1F2A";
@@ -74,6 +76,7 @@ public partial class HotkeySettingsWindow : Window
         ("FixClipboardCapitalization", "Fix Clipboard Capitalization", "✏"),
         ("OpenModeMenu",               "Open Quick Menu", "☰"),
         ("OpenSettings",               "Open Settings",    "⚙"),
+        ("OpenStillSpace",             "Open Still Space", "◇"),
     ];
 
     private static readonly Dictionary<string, string> DefaultGestures = new()
@@ -89,6 +92,7 @@ public partial class HotkeySettingsWindow : Window
         ["FixClipboardCapitalization"] = "Ctrl+Shift+C",
         ["OpenModeMenu"]               = "Ctrl+Shift+F3",
         ["OpenSettings"]               = "Ctrl+F3",
+        ["OpenStillSpace"]             = "Ctrl+F4",
     };
 
     private readonly Dictionary<string, string> _pending = new();
@@ -159,6 +163,8 @@ public partial class HotkeySettingsWindow : Window
         _pendingOpacity  = Math.Clamp(ui.Opacity * 100, 25, 100);
         _pendingLargeText = ui.LargeTextMode;
         _pendingLayout = ui.Layout;
+        _pendingOverlayCaretPlacement = ui.OverlayCaretPlacement;
+        _pendingOverlayFadeMs = Math.Clamp(ui.OverlayFadeTransitionMs, 0, 600);
         _pendingAccent = ui.AccentColor;
         _pendingBg     = ui.OverlayBackgroundColor;
         _pendingCard   = ui.CardColor;
@@ -215,13 +221,52 @@ public partial class HotkeySettingsWindow : Window
         OpacityLabel.Text   = $"{(int)_pendingOpacity}%";
 
         LargeTextCheck.IsChecked   = _pendingLargeText;
+        LayoutAuto.IsChecked       = _pendingLayout == OverlayLayout.Auto;
         LayoutVertical.IsChecked   = _pendingLayout == OverlayLayout.Vertical;
         LayoutHorizontal.IsChecked = _pendingLayout == OverlayLayout.Horizontal;
 
         LargeTextCheck.Checked   += (_, _) => _pendingLargeText = true;
         LargeTextCheck.Unchecked += (_, _) => _pendingLargeText = false;
+        LayoutAuto.Checked       += (_, _) => _pendingLayout = OverlayLayout.Auto;
         LayoutVertical.Checked   += (_, _) => _pendingLayout = OverlayLayout.Vertical;
         LayoutHorizontal.Checked += (_, _) => _pendingLayout = OverlayLayout.Horizontal;
+
+        OverlayCaretPlacementCombo.Items.Clear();
+        foreach (WriterOverlayCaretPlacement p in Enum.GetValues<WriterOverlayCaretPlacement>())
+        {
+            var label = p switch
+            {
+                WriterOverlayCaretPlacement.Above => "Above caret",
+                WriterOverlayCaretPlacement.Below => "Below caret",
+                _ => "Auto (prefer above)",
+            };
+            OverlayCaretPlacementCombo.Items.Add(new ComboBoxItem { Content = label, Tag = p });
+        }
+
+        foreach (ComboBoxItem ci in OverlayCaretPlacementCombo.Items)
+        {
+            if (ci.Tag is WriterOverlayCaretPlacement tag && tag == _pendingOverlayCaretPlacement)
+            {
+                OverlayCaretPlacementCombo.SelectedItem = ci;
+                break;
+            }
+        }
+
+        OverlayCaretPlacementCombo.SelectionChanged += (_, _) =>
+        {
+            if (OverlayCaretPlacementCombo.SelectedItem is ComboBoxItem { Tag: WriterOverlayCaretPlacement tag })
+            {
+                _pendingOverlayCaretPlacement = tag;
+            }
+        };
+
+        OverlayFadeMsSlider.Value = _pendingOverlayFadeMs;
+        OverlayFadeMsLabel.Text = _pendingOverlayFadeMs.ToString();
+        OverlayFadeMsSlider.ValueChanged += (_, _) =>
+        {
+            _pendingOverlayFadeMs = (int)Math.Round(OverlayFadeMsSlider.Value);
+            OverlayFadeMsLabel.Text = _pendingOverlayFadeMs.ToString();
+        };
 
         BuildSwatches(AccentSwatches, AccentPresets, AccentHex, AccentPreview, v => _pendingAccent = v);
         BuildSwatches(BgSwatches,     BgPresets,     BgHex,     BgPreview,     v => _pendingBg     = v);
@@ -342,6 +387,9 @@ public partial class HotkeySettingsWindow : Window
         WriterDebounceLabel.Text = _pendingWriter.DebounceTimeMs.ToString();
         WriterAutoCap.IsChecked = _pendingWriter.AutoCapitalizeSentences;
         WriterCapI.IsChecked = _pendingWriter.CapitalizeSingleLetterI;
+        WriterTitleHints.IsChecked = _pendingWriter.UseWindowTitleForPhraseHints;
+        WriterTitleHints.Checked += (_, _) => _pendingWriter.UseWindowTitleForPhraseHints = true;
+        WriterTitleHints.Unchecked += (_, _) => _pendingWriter.UseWindowTitleForPhraseHints = false;
     }
 
     private static string DescribeVoiceMode(SpeechVoiceMode m) => m switch
@@ -743,6 +791,8 @@ public partial class HotkeySettingsWindow : Window
                 _pendingOpacity    = 100;
                 _pendingLargeText  = false;
                 _pendingLayout     = OverlayLayout.Vertical;
+                _pendingOverlayCaretPlacement = WriterOverlayCaretPlacement.Auto;
+                _pendingOverlayFadeMs = 110;
                 _pendingAccent     = "#4ADE80";
                 _pendingBg         = "#0F0F14";
                 _pendingCard       = "#1E1F2A";
@@ -760,8 +810,20 @@ public partial class HotkeySettingsWindow : Window
                 OpacitySlider.Value  = _pendingOpacity;
                 OpacityLabel.Text    = "100%";
                 LargeTextCheck.IsChecked   = false;
+                LayoutAuto.IsChecked       = false;
                 LayoutVertical.IsChecked   = true;
                 LayoutHorizontal.IsChecked = false;
+                foreach (ComboBoxItem ci in OverlayCaretPlacementCombo.Items)
+                {
+                    if (ci.Tag is WriterOverlayCaretPlacement tag && tag == WriterOverlayCaretPlacement.Auto)
+                    {
+                        OverlayCaretPlacementCombo.SelectedItem = ci;
+                        break;
+                    }
+                }
+
+                OverlayFadeMsSlider.Value = 110;
+                OverlayFadeMsLabel.Text = "110";
                 SetHexAndPreview(AccentHex, AccentPreview, _pendingAccent);
                 SetHexAndPreview(BgHex,     BgPreview,     _pendingBg);
                 SetHexAndPreview(CardHex,   CardPreview,   _pendingCard);
@@ -818,6 +880,8 @@ public partial class HotkeySettingsWindow : Window
         ui.Opacity                = Math.Clamp(_pendingOpacity / 100.0, 0.25, 1.0);
         ui.LargeTextMode          = _pendingLargeText;
         ui.Layout                 = _pendingLayout;
+        ui.OverlayCaretPlacement  = _pendingOverlayCaretPlacement;
+        ui.OverlayFadeTransitionMs = Math.Clamp(_pendingOverlayFadeMs, 0, 600);
         ui.AccentColor            = _pendingAccent;
         ui.OverlayBackgroundColor = _pendingBg;
         ui.CardColor              = _pendingCard;

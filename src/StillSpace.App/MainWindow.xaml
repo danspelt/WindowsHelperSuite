@@ -1,0 +1,292 @@
+<Window x:Class="StillSpace.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:counseling="clr-namespace:StillSpace.Counseling"
+        Title="Still Space"
+        Width="1280"
+        Height="800"
+        MinWidth="960"
+        MinHeight="640"
+        Background="#0F1218"
+        Foreground="#E8EAEF"
+        Loaded="MainWindow_OnLoaded"
+        PreviewKeyDown="Window_PreviewKeyDown"
+        PreviewKeyUp="Window_PreviewKeyUp"
+        Closing="Window_Closing">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="12,8" />
+            <Setter Property="Margin" Value="0,0,8,0" />
+            <Setter Property="Background" Value="#171B24" />
+            <Setter Property="Foreground" Value="#E8EAEF" />
+            <Setter Property="BorderBrush" Value="#2A3140" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+        <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Background" Value="#2A3F5C" />
+            <Setter Property="BorderBrush" Value="#7EB8FF" />
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#171B24" />
+            <Setter Property="Foreground" Value="#E8EAEF" />
+            <Setter Property="BorderBrush" Value="#2A3140" />
+            <Setter Property="CaretBrush" Value="#E8EAEF" />
+            <Setter Property="Padding" Value="8" />
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="#3A2028"
+                BorderBrush="#7A3D4D"
+                BorderThickness="0,0,0,1"
+                Padding="16,10"
+                Visibility="{Binding CrisisVisible, Converter={StaticResource BoolToVis}}">
+            <StackPanel>
+                <TextBlock Text="Crisis keywords detected — this is not a clinical assessment."
+                           FontWeight="SemiBold" />
+                <TextBlock Text="{x:Static counseling:CrisisDetector.ResourcesText}"
+                           TextWrapping="Wrap"
+                           Margin="0,6,0,0"
+                           Foreground="#9AA3B5" />
+            </StackPanel>
+        </Border>
+
+        <!-- Welcome -->
+        <Grid Grid.Row="1" Visibility="{Binding ShowWelcome, Converter={StaticResource BoolToVis}}">
+            <Border MaxWidth="520"
+                    Margin="32"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Background="#171B24"
+                    BorderBrush="#2A3140"
+                    BorderThickness="1"
+                    CornerRadius="16"
+                    Padding="32">
+                <StackPanel>
+                    <TextBlock Text="Still Space" FontSize="28" FontWeight="SemiBold" />
+                    <TextBlock TextWrapping="Wrap"
+                               Margin="0,8,0,16"
+                               Foreground="#9AA3B5"
+                               Text="A calm presence, voice and text, and a counselor tone tuned for imperfect speech and emotional safety. This WPF port replaces the 3D room with a simple still visual." />
+                    <StackPanel Visibility="{Binding HeadsetOnlyMode, Converter={StaticResource BoolToVis}}">
+                        <TextBlock TextWrapping="Wrap" Foreground="#9AA3B5" FontSize="12"
+                                   Text="Headset-only mode: TTS plays only on a playback device that matches your name or ID settings." />
+                        <TextBlock Margin="0,8,0,0" Foreground="#9AA3B5" FontSize="12">
+                            <Run Text="Output: " />
+                            <Run Text="{Binding HeadsetLabel, Mode=OneWay}" FontWeight="Bold" />
+                            <Run Text=" · Status: " />
+                            <Run Text="{Binding HeadsetStatusText, Mode=OneWay}" FontWeight="Bold" />
+                        </TextBlock>
+                    </StackPanel>
+                    <TextBlock Margin="0,16,0,8" Foreground="#9AA3B5">
+                        <Run Text="{Binding CorrectionCount, Mode=OneWay}" />
+                        <Run Text=" saved transcript correction(s) on this device" />
+                    </TextBlock>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="Start live voice (OpenAI Realtime)"
+                                Style="{StaticResource PrimaryButton}"
+                                Command="{Binding StartRealtimeLiveCommand}"
+                                IsEnabled="{Binding VoiceStartOk}" />
+                        <Button Content="Start voice session"
+                                Command="{Binding StartVoiceSessionCommand}"
+                                IsEnabled="{Binding VoiceStartOk}"
+                                ToolTip="Starts with the microphone always on: OpenAI live voice if an API key is set, otherwise Windows dictation. No extra “start mic” step." />
+                        <Button Content="Start text-only session" Command="{Binding StartTextOnlySessionCommand}" />
+                        <Button Content="Retry devices" Command="{Binding RetryDevicesCommand}" />
+                        <Button Content="Settings" Click="OpenSettings_Click" />
+                    </StackPanel>
+                    <TextBlock Margin="0,12,0,0"
+                               Foreground="#9AA3B5"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Text="Not therapy or medical advice. Add your API key in Settings, or put OPENAI_API_KEY in .env next to the app, or in %LocalAppData%\StillSpace\.env." />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Session -->
+        <Grid Grid.Row="1" Visibility="{Binding ShowSession, Converter={StaticResource BoolToVis}}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    Padding="16,10"
+                    BorderBrush="#5C4D2A"
+                    BorderThickness="0,0,0,1"
+                    Background="#2A2418"
+                    Visibility="{Binding ShowHeadsetDisconnectBanner, Converter={StaticResource BoolToVis}}">
+                <StackPanel>
+                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold"
+                               Text="Headset not matched for private mode. Live voice and counselor audio are paused." />
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Button Content="Retry" Style="{StaticResource PrimaryButton}" Command="{Binding RetryDevicesCommand}" />
+                        <Button Content="Use text only" Command="{Binding SwitchToTextOnlyFromBannerCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <DockPanel Grid.Row="1" Margin="16,8">
+                <TextBlock Text="Still Space" FontWeight="SemiBold" VerticalAlignment="Center" DockPanel.Dock="Left" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" DockPanel.Dock="Right">
+                    <TextBlock Text="Mode:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="#9AA3B5" />
+                    <ComboBox x:Name="ModeCombo"
+                              Width="140"
+                              VerticalAlignment="Center"
+                              SelectionChanged="ModeCombo_OnSelectionChanged">
+                        <ComboBoxItem Content="Support" Tag="Support" />
+                        <ComboBoxItem Content="Reflection" Tag="Reflection" />
+                        <ComboBoxItem Content="Grounding" Tag="Grounding" />
+                        <ComboBoxItem Content="Practical" Tag="Practical" />
+                        <ComboBoxItem Content="Quiet" Tag="Quiet" />
+                    </ComboBox>
+                    <Button Content="Settings" Margin="16,0,0,0" Click="OpenSettings_Click" />
+                    <Button Content="End session" Command="{Binding EndSessionCommand}" />
+                </StackPanel>
+            </DockPanel>
+
+            <StackPanel Grid.Row="2" Margin="16,0,16,4">
+                <TextBlock Foreground="#9AA3B5"
+                           FontSize="12"
+                           Visibility="{Binding TextOnlySession, Converter={StaticResource BoolToVis}}"
+                           Text="Text-only session — voice input and read-aloud are off for privacy." />
+                <TextBlock Foreground="#7EB8FF"
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           Visibility="{Binding ShowRealtimeHints, Converter={StaticResource BoolToVis}}"
+                           Text="Live voice uses OpenAI Realtime (speech-to-speech, Server VAD). The microphone stays on until you stop live voice. “Heard” text is guidance from input transcription, not the model’s exact audio input. Counselor text is a transcript of the spoken reply. Speaking while the counselor talks cancels their reply (barge-in)." />
+                <Border Margin="0,8,0,0"
+                        Padding="10,6"
+                        Background="#171B24"
+                        BorderBrush="#2A3F5C"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Visibility="{Binding ShowRealtimeDiagnosticsStrip, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="Live voice turn state" Foreground="#7EB8FF" FontSize="11" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding RealtimeTurnStateLabel, Mode=OneWay}"
+                                   Foreground="#E8EAEF"
+                                   FontSize="12"
+                                   Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding RealtimeTurnTimingDetail, Mode=OneWay}"
+                                   Foreground="#9AA3B5"
+                                   FontSize="11"
+                                   Margin="0,2,0,0" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <Grid Grid.Row="3" Margin="16,0,16,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0"
+                        Margin="0,0,16,0"
+                        CornerRadius="12"
+                        BorderBrush="#2A3140"
+                        BorderThickness="1">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Color="#141820" Offset="0" />
+                            <GradientStop Color="#0A0C10" Offset="1" />
+                        </LinearGradientBrush>
+                    </Border.Background>
+                    <Grid MinHeight="280">
+                        <Ellipse Width="120"
+                                 Height="160"
+                                 VerticalAlignment="Center"
+                                 HorizontalAlignment="Center"
+                                 Fill="#1E2430"
+                                 Opacity="0.9" />
+                        <TextBlock Text="Calm room"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Bottom"
+                                   Margin="0,0,0,24"
+                                   Foreground="#5A6578"
+                                   FontSize="13" />
+                    </Grid>
+                </Border>
+
+                <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <TextBlock Foreground="#9AA3B5" Margin="0,0,0,4">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="Transcript / draft" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ShowRealtimeHints}" Value="True">
+                                            <Setter Property="Text" Value="Draft (live voice uses mic automatically)" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBox x:Name="DraftBox"
+                                 Text="{Binding DraftUserText, UpdateSourceTrigger=PropertyChanged}"
+                                 TextWrapping="Wrap"
+                                 AcceptsReturn="True"
+                                 MinHeight="100"
+                                 Margin="0,0,0,8" />
+                        <TextBlock Text="Heard (guidance)"
+                                   Foreground="#9AA3B5"
+                                   FontSize="11"
+                                   Margin="0,0,0,2"
+                                   Visibility="{Binding ShowRealtimeHints, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="{Binding LiveTranscript, Mode=OneWay}"
+                                   TextWrapping="Wrap"
+                                   Foreground="#7EB8FF"
+                                   Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding AiPhraseHint, Mode=OneWay}"
+                                   TextWrapping="Wrap"
+                                   Foreground="#6B7588"
+                                   FontStyle="Italic"
+                                   FontSize="11"
+                                   Margin="0,0,0,8"
+                                   ToolTip="Writing assistant: reads your full draft line and suggests the shortest good next word (or few words)—not the counselor. Settings."
+                                   Visibility="{Binding ShowAiPhraseHint, Converter={StaticResource BoolToVis}}" />
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <Button Content="Mic (toggle)"
+                                    Command="{Binding ToggleMicCommand}" />
+                            <Button Content="Start live voice"
+                                    Command="{Binding StartRealtimeLiveCommand}"
+                                    Visibility="{Binding ShowStartLiveVoiceInSession, Converter={StaticResource BoolToVis}}" />
+                            <Button Content="Stop live voice"
+                                    Command="{Binding StopRealtimeLiveCommand}"
+                                    Visibility="{Binding RealtimeLiveActive, Converter={StaticResource BoolToVis}}" />
+                            <Button Content="Fix transcript…" Click="OpenCorrection_Click" />
+                            <Button Content="Send to counselor"
+                                    Style="{StaticResource PrimaryButton}"
+                                    Command="{Binding SendCommand}"
+                                    IsEnabled="{Binding TextSendEnabled}" />
+                        </StackPanel>
+                        <TextBlock Text="Counselor" Foreground="#9AA3B5" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding LastAssistant, Mode=OneWay}"
+                                   TextWrapping="Wrap"
+                                   Margin="0,0,0,8" />
+                        <Button Content="Replay read-aloud"
+                                HorizontalAlignment="Left"
+                                Command="{Binding ReplayTtsCommand}" />
+                        <TextBlock Margin="0,12,0,0"
+                                   Foreground="#5A6578"
+                                   FontSize="11"
+                                   TextWrapping="Wrap"
+                                   Text="With live voice off, hold Space (outside text fields) for push-to-talk or use Mic (toggle) for Windows dictation. With live voice on, the mic is always active for OpenAI. If nothing appears, check Settings → Privacy → Speech and microphone access." />
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+    </Grid>
+</Window>

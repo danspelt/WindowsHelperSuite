@@ -38,4 +38,21 @@ public class AiWriterSettings
         "Keep replies short unless the user asks for detail. " +
         "Produce accessible, easy-to-read writing. " +
         "Be supportive and friendly.";
+
+    // ── Writer overlay (prediction) AI enrichments ──
+
+    /// <summary>When true and <see cref="ApiKey"/> is set, overlay suggestions are augmented with short LLM continuations after a brief debounce.</summary>
+    public bool EnableOverlayAiSuggestions { get; set; } = true;
+
+    /// <summary>Max AI lines to request (each becomes one overlay slot, merged ahead of local predictions).</summary>
+    public int OverlayAiMaxSuggestions { get; set; } = 4;
+
+    /// <summary>HTTP timeout for each overlay AI request (ms).</summary>
+    public int OverlayAiTimeoutMs { get; set; } = 2500;
+
+    /// <summary>Model id for overlay completions only; empty uses <see cref="Model"/>.</summary>
+    public string OverlayAiSuggestionModel { get; set; } = "";
+
+    /// <summary>Idle time after typing before calling the AI (ms).</summary>
+    public int OverlayAiDebounceMs { get; set; } = 400;
 }

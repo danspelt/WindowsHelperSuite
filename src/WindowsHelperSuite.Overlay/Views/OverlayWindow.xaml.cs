@@ -20,6 +20,8 @@ public partial class OverlayWindow : Window
     private static readonly Duration OverlayRefreshDuration = new(TimeSpan.FromMilliseconds(100));
     private static readonly Duration SuggestionFadeDuration = new(TimeSpan.FromMilliseconds(100));
     private static readonly Duration SuggestionSlideDuration = new(TimeSpan.FromMilliseconds(115));
+    private int _overlayFadeTransitionMs = 110;
+    private bool _hideFadeInProgress;
     /// <summary>Visual index in <see cref="SuggestionsContainer"/> for keyboard highlight; null = none.</summary>
     private int? _highlightedVisualIndex;
 
@@ -34,8 +36,15 @@ public partial class OverlayWindow : Window
         InitializeComponent();
     }
 
-    public void ShowSuggestions(List<SuggestionItem> suggestions, int page = 0, int totalPages = 1)
+    public void ShowSuggestions(
+        List<SuggestionItem> suggestions,
+        int page = 0,
+        int totalPages = 1,
+        int layoutCaretX = int.MinValue,
+        int layoutCaretY = int.MinValue,
+        int fadeTransitionMs = 110)
     {
+        _overlayFadeTransitionMs = Math.Clamp(fadeTransitionMs, 0, 600);
         _currentSuggestions = suggestions;
         _currentPage = page;
         _totalPages = totalPages;
@@ -43,7 +52,7 @@ public partial class OverlayWindow : Window
         // Auto-detect layout if needed
         if (_currentLayout == OverlayLayout.Auto)
         {
-            var detectedLayout = DetectOptimalLayout();
+            var detectedLayout = DetectOptimalLayout(layoutCaretX, layoutCaretY);
 
             // Check if we should lock the layout
             if (_lockedLayout.HasValue && DateTime.Now - _layoutLockTime < _layoutLockDuration)
@@ -68,12 +77,18 @@ public partial class OverlayWindow : Window
 
         if (suggestions.Count > 0)
         {
+            if (_hideFadeInProgress)
+            {
+                BeginAnimation(OpacityProperty, null);
+                _hideFadeInProgress = false;
+            }
+
             var wasHidden = !IsVisible;
             Show();
-            if (wasHidden)
+            if (wasHidden && _overlayFadeTransitionMs > 0)
             {
                 Opacity = 0;
-                var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(110))
+                var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(_overlayFadeTransitionMs))
                 {
                     EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
                 };
@@ -82,6 +97,8 @@ public partial class OverlayWindow : Window
             }
             else
             {
+                BeginAnimation(OpacityProperty, null);
+                Opacity = 1;
                 AnimateOverlayRefresh();
             }
 
@@ -89,7 +106,7 @@ public partial class OverlayWindow : Window
         }
         else
         {
-            Hide();
+            HideSuggestionsAnimated();
         }
     }
 
@@ -102,17 +119,45 @@ public partial class OverlayWindow : Window
         _layoutLockTime = DateTime.MinValue;
     }
 
-    private OverlayLayout DetectOptimalLayout()
+    private OverlayLayout DetectOptimalLayout(int refCaretX, int refCaretY)
     {
-        var screen = SystemParameters.WorkArea;
-        var caretX = Left + (ActualWidth / 2); // Approximate center
-        var caretY = Top;
+        double screenLeft;
+        double screenTop;
+        double screenRight;
+        double screenBottom;
+        var caretX = refCaretX;
+        var caretY = refCaretY;
+        if (caretX == int.MinValue || caretY == int.MinValue
+                                   || !Win32Screen.TryGetWorkAreaForPoint(caretX, caretY, out var wl, out var wt, out var wr, out var wb))
+        {
+            var screen = SystemParameters.WorkArea;
+            screenLeft = screen.Left;
+            screenTop = screen.Top;
+            screenRight = screen.Right;
+            screenBottom = screen.Bottom;
+            if (caretX == int.MinValue)
+            {
+                caretX = (int)(screenLeft + (screenRight - screenLeft) / 2);
+            }
 
-        // Calculate available space in each direction
-        var spaceBelow = screen.Bottom - caretY;
-        var spaceAbove = caretY - screen.Top;
-        var spaceRight = screen.Right - caretX;
-        var spaceLeft = caretX - screen.Left;
+            if (caretY == int.MinValue)
+            {
+                caretY = (int)(screenTop + (screenBottom - screenTop) / 2);
+            }
+        }
+        else
+        {
+            screenLeft = wl;
+            screenTop = wt;
+            screenRight = wr;
+            screenBottom = wb;
+        }
+
+        // Calculate available space in each direction from the caret (or reference point)
+        var spaceBelow = screenBottom - caretY;
+        var spaceAbove = caretY - screenTop;
+        var spaceRight = screenRight - caretX;
+        var spaceLeft = caretX - screenLeft;
 
         // Estimate overlay sizes (approximate)
         const double horizontalHeight = 80;
@@ -132,9 +177,11 @@ public partial class OverlayWindow : Window
             (spaceBelow > verticalHeight || spaceAbove > verticalHeight))
             verticalScore += 2;
 
-        // Prefer horizontal for wide screens when centered
-        if (screen.Width > screen.Height)
+        // Prefer horizontal for wide work areas when centered
+        if ((screenRight - screenLeft) > (screenBottom - screenTop))
+        {
             horizontalScore += 1;
+        }
 
         // Default to horizontal if scores are equal
         return horizontalScore >= verticalScore ? OverlayLayout.Horizontal : OverlayLayout.Vertical;
@@ -281,7 +328,51 @@ public partial class OverlayWindow : Window
 
     public void HideSuggestions()
     {
-        Hide();
+        HideSuggestionsAnimated();
+    }
+
+    private void HideSuggestionsAnimated()
+    {
+        if (!IsVisible)
+        {
+            return;
+        }
+
+        if (_overlayFadeTransitionMs <= 0)
+        {
+            BeginAnimation(OpacityProperty, null);
+            Opacity = 1;
+            Hide();
+            return;
+        }
+
+        _hideFadeInProgress = true;
+        var fadeOut = new DoubleAnimation(Opacity, 0, TimeSpan.FromMilliseconds(_overlayFadeTransitionMs))
+        {
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseIn }
+        };
+        fadeOut.Completed += (_, _) =>
+        {
+            _hideFadeInProgress = false;
+            BeginAnimation(OpacityProperty, null);
+            Opacity = 1;
+            Hide();
+        };
+        BeginAnimation(OpacityProperty, fadeOut);
+    }
+
+    /// <summary>Non-blocking status line (e.g. AI unavailable). Pass null to clear.</summary>
+    public void SetOverlayStatusHint(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            OverlayStatusHint.Visibility = Visibility.Collapsed;
+            OverlayStatusHint.Text = "";
+            return;
+        }
+
+        OverlayStatusHint.Text = message.Trim();
+        OverlayStatusHint.Visibility = Visibility.Visible;
     }
 
     private Button CreateSuggestionButton(SuggestionItem suggestion)
@@ -524,6 +615,7 @@ public partial class OverlayWindow : Window
         }
         else
         {
+            // Auto, Left, Right (left/right not specialized — prefer above then below)
             if (spaceAbove >= windowHeight)
             {
                 top = caretY - windowHeight - gapAbove;
@@ -549,8 +641,10 @@ public partial class OverlayWindow : Window
     public void ApplyUiSettings(int fontSize, double opacity, bool largeTextMode,
         string accentColor = "#4ADE80", string bgColor = "#0F0F14",
         string cardColor = "#1E1F2A", string textColor = "#F0F0F5",
-        string fontFamily = "Segoe UI", string fontWeight = "SemiBold")
+        string fontFamily = "Segoe UI", string fontWeight = "SemiBold",
+        int overlayFadeTransitionMs = 110)
     {
+        _overlayFadeTransitionMs = Math.Clamp(overlayFadeTransitionMs, 0, 600);
         var baseFontSize = largeTextMode ? Math.Max(fontSize * 1.5, 20) : Math.Max(fontSize, 16);
         Opacity = Math.Clamp(opacity, 0.35, 1.0);
 
@@ -667,6 +761,7 @@ public partial class OverlayWindow : Window
             SuggestionKind.PhraseCompletion => "Phrase",
             SuggestionKind.NextWord => "Next word",
             SuggestionKind.UserHistory => "From history",
+            SuggestionKind.AiSuggestion => "AI",
             _ => "Word"
         };
     }
@@ -735,6 +830,9 @@ public partial class OverlayWindow : Window
 
 public enum ScreenPosition
 {
+    /// <summary>Prefer above caret, then below (legacy default).</summary>
+    Auto,
+
     Below,
     Above,
     Left,

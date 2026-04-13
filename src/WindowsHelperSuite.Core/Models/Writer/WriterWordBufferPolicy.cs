@@ -63,4 +63,103 @@ public static class WriterWordBufferPolicy
 
         return new string(chars).Trim().ToLowerInvariant();
     }
+
+    /// <summary>
+    /// Splits <paramref name="sentenceTrimmedEnd"/> (no trailing whitespace) into the prefix before the last token and that token.
+    /// </summary>
+    public static void SplitLastWhitespaceToken(string sentenceTrimmedEnd, out string prefixBeforeLast, out string lastToken)
+    {
+        prefixBeforeLast = string.Empty;
+        lastToken = string.Empty;
+        if (string.IsNullOrEmpty(sentenceTrimmedEnd))
+        {
+            return;
+        }
+
+        var i = sentenceTrimmedEnd.Length - 1;
+        while (i >= 0 && !char.IsWhiteSpace(sentenceTrimmedEnd[i]))
+        {
+            i--;
+        }
+
+        if (i < 0)
+        {
+            lastToken = sentenceTrimmedEnd;
+            return;
+        }
+
+        lastToken = sentenceTrimmedEnd[(i + 1)..];
+        prefixBeforeLast = sentenceTrimmedEnd[..i].TrimEnd();
+    }
+
+    /// <summary>
+    /// Resolves the word committed on space/punctuation when <paramref name="currentWord"/> may be only a retyped suffix
+    /// while <paramref name="sentenceTrimmedEnd"/> already holds the full last token (mid-word repair).
+    /// </summary>
+    public static void TryResolveCompletedWordForCommit(
+        string sentenceTrimmedEnd,
+        string currentWord,
+        string fallbackTextBeforeWord,
+        out string wordCompleted,
+        out string textBeforeWord)
+    {
+        SplitLastWhitespaceToken(sentenceTrimmedEnd, out var prefixBeforeLast, out var lastToken);
+
+        if (lastToken.Length == 0)
+        {
+            wordCompleted = currentWord;
+            textBeforeWord = fallbackTextBeforeWord;
+            return;
+        }
+
+        if (!string.Equals(lastToken, currentWord, StringComparison.OrdinalIgnoreCase)
+            && lastToken.EndsWith(currentWord, StringComparison.OrdinalIgnoreCase))
+        {
+            wordCompleted = lastToken;
+            textBeforeWord = prefixBeforeLast;
+            return;
+        }
+
+        if (string.Equals(lastToken, currentWord, StringComparison.OrdinalIgnoreCase))
+        {
+            wordCompleted = lastToken;
+            textBeforeWord = prefixBeforeLast;
+            return;
+        }
+
+        wordCompleted = currentWord;
+        textBeforeWord = fallbackTextBeforeWord;
+    }
+
+    /// <summary>
+    /// True when <paramref name="sentence"/> ends with <paramref name="currentWord"/> and removing one character should
+    /// trim both buffers: after a whitespace boundary, when the sentence is exactly the word, or when the character before
+    /// the suffix is word-extending (same token at the end — e.g. sentence <c>match</c> and partial <c>h</c> after fixing <c>matc</c>).
+    /// </summary>
+    public static bool IsSentenceSuffixAlignedWithCurrentWord(string sentence, string currentWord)
+    {
+        if (currentWord.Length == 0 || sentence.Length < currentWord.Length)
+        {
+            return false;
+        }
+
+        if (!sentence.AsSpan(sentence.Length - currentWord.Length).SequenceEqual(currentWord.AsSpan()))
+        {
+            return false;
+        }
+
+        if (sentence.Length == currentWord.Length)
+        {
+            return true;
+        }
+
+        var beforeSuffix = sentence[sentence.Length - currentWord.Length - 1];
+        if (char.IsWhiteSpace(beforeSuffix))
+        {
+            return true;
+        }
+
+        // Same whitespace-delimited token at sentence end (not only "space before partial")
+        return IsWordExtendingCharacter(beforeSuffix);
+    }
 }

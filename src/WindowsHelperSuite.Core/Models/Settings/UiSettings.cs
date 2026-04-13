@@ -11,6 +11,12 @@ public class UiSettings
     public bool LargeTextMode { get; set; } = false;
     public OverlayLayout Layout { get; set; } = OverlayLayout.Vertical;
 
+    /// <summary>Where to place the overlay relative to the caret.</summary>
+    public WriterOverlayCaretPlacement OverlayCaretPlacement { get; set; } = WriterOverlayCaretPlacement.Auto;
+
+    /// <summary>Show/hide opacity transition length in ms; 0 disables.</summary>
+    public int OverlayFadeTransitionMs { get; set; } = 110;
+
     public string AccentColor { get; set; } = "#4ADE80";
     public string OverlayBackgroundColor { get; set; } = "#0F0F14";
     public string CardColor { get; set; } = "#1E1F2A";

@@ -14,4 +14,7 @@ public class AiSettings
     public bool RememberFrequentPhrases { get; set; } = true;
     public string? ApiKey { get; set; }
     public string Model { get; set; } = "gpt-4o-mini";
+
+    /// <summary>OpenAI-compatible API root, no trailing slash (e.g. https://api.openai.com/v1).</summary>
+    public string ApiBaseUrl { get; set; } = "https://api.openai.com/v1";
 }
