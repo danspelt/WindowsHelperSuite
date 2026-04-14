@@ -363,11 +363,6 @@ public class InputService : IInputService, IDisposable
                 return;
             }
         }
-        else if (key >= 0x30 && key <= 0x39) // Number keys but overlay not visible
-        {
-            _loggingService.Debug($"Number key {key - 0x30} ignored - overlay not visible");
-        }
-
         // Paste while overlay visible — app may replace with sentence-corrected plain text
         if (IsOverlayVisible && e.Ctrl && key == 0x56 && !e.Alt)
         {

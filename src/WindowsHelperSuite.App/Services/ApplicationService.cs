@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net.Http;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -25,6 +26,7 @@ using WindowsHelperSuite.Overlay.Services;
 using WindowsHelperSuite.Input.Services;
 using WindowsHelperSuite.Prediction.Services;
 using WindowsHelperSuite.Speech.Services;
+using WindowsHelperSuite.Writer.Llm;
 
 namespace WindowsHelperSuite.App.Services;
 
@@ -95,7 +97,6 @@ public class ApplicationService : IDisposable
             new CachingSecretFieldDetector(new SecretFieldDetector()),
             new CachingWriterOverlayExclusionDetector(new WriterOverlayExclusionDetector()));
         _typingModel = typingModel ?? new TypingModelService();
-        _predictionService = new PredictionService(_typingModel, () => _settingsService.Settings.Writer);
         if (writerContext != null)
         {
             _writerContext = writerContext;
@@ -107,6 +108,11 @@ public class ApplicationService : IDisposable
                 new CachingWriterContext(new ForegroundWriterContext()));
             _writerContext = _manualPhaseContext;
         }
+
+        _predictionService = new CompositePredictionService(
+            _typingModel,
+            () => _settingsService.Settings.Writer,
+            () => _writerContext.GetSnapshot());
         _learningEngine = learningEngine ?? new DefaultLearningEngine();
         _speechService = new SpeechService(() => _settingsService.Settings.Speech, _loggingService);
 
@@ -342,6 +348,7 @@ public class ApplicationService : IDisposable
     private long _lastSelectionTick;
     private int _overlayAiGeneration;
     private CancellationTokenSource? _overlayAiDebounceCts;
+    private readonly HttpClient _localOverlayHttp = new();
 
     private void ShowOverlay()
     {
@@ -512,25 +519,22 @@ public class ApplicationService : IDisposable
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(aiWriter.ApiKey))
-        {
-            DeferWriterUi(() =>
-            {
-                if (_hasValidTextInput)
-                {
-                    _overlayService.SetOverlayStatusHint("AI overlay: add an API key in AI settings to enable cloud suggestions.");
-                }
-            });
-            return;
-        }
-
         _overlayAiDebounceCts?.Cancel();
         _overlayAiDebounceCts?.Dispose();
         _overlayAiDebounceCts = new CancellationTokenSource();
         var debounceToken = _overlayAiDebounceCts.Token;
         var gen = ++_overlayAiGeneration;
 
-        _ = Task.Run(() => RunOverlayAiEnrichmentAsync(gen, debounceToken));
+        if (!string.IsNullOrWhiteSpace(aiWriter.ApiKey))
+        {
+            _ = Task.Run(() => RunOverlayAiEnrichmentAsync(gen, debounceToken));
+            return;
+        }
+
+        if (aiWriter.EnableOverlayLocalLlm)
+        {
+            _ = Task.Run(() => RunLocalLlmOverlayEnrichmentAsync(gen, debounceToken));
+        }
     }
 
     private async Task RunOverlayAiEnrichmentAsync(int gen, CancellationToken debounceToken)
@@ -631,11 +635,133 @@ public class ApplicationService : IDisposable
             _loggingService.Debug($"Overlay AI enrichment: {ex.Message}");
             DeferWriterUi(() =>
             {
-                if (_hasValidTextInput && _settingsService.Settings.Ai.EnableOverlayAiSuggestions)
+                if (_hasValidTextInput &&
+                    _settingsService.Settings.Ai.EnableOverlayAiSuggestions &&
+                    !string.IsNullOrWhiteSpace(_settingsService.Settings.Ai.ApiKey))
                 {
                     _overlayService.SetOverlayStatusHint("AI suggestions unavailable — using local word bank only.");
                 }
             });
+        }
+    }
+
+    private LocalLlmOptions BuildLocalOverlayLlmOptions()
+    {
+        var ai = _settingsService.Settings.Ai;
+        var model = string.IsNullOrWhiteSpace(ai.OverlayLocalLlmModel)
+            ? (string.IsNullOrWhiteSpace(ai.Model) ? "local-model" : ai.Model.Trim())
+            : ai.OverlayLocalLlmModel.Trim();
+
+        return new LocalLlmOptions
+        {
+            BaseUrl = string.IsNullOrWhiteSpace(ai.OverlayLocalLlmBaseUrl)
+                ? "http://localhost:1234/v1"
+                : ai.OverlayLocalLlmBaseUrl.Trim().TrimEnd('/'),
+            Model = model,
+            TimeoutMs = Math.Clamp(ai.OverlayAiTimeoutMs, 400, 10_000),
+            MaxSuggestions = Math.Clamp(ai.OverlayAiMaxSuggestions, 1, 9)
+        };
+    }
+
+    private async Task RunLocalLlmOverlayEnrichmentAsync(int gen, CancellationToken debounceToken)
+    {
+        try
+        {
+            var debounceMs = Math.Clamp(_settingsService.Settings.Ai.OverlayAiDebounceMs, 0, 2000);
+            if (debounceMs > 0)
+            {
+                await Task.Delay(debounceMs, debounceToken).ConfigureAwait(false);
+            }
+
+            if (debounceToken.IsCancellationRequested || gen != _overlayAiGeneration)
+            {
+                return;
+            }
+
+            var aiWriter = _settingsService.Settings.Ai;
+            if (!aiWriter.EnableOverlayAiSuggestions || !aiWriter.EnableOverlayLocalLlm)
+            {
+                return;
+            }
+
+            var context = _inputService.GetSuggestionContextPrefix();
+            var word = _inputService.GetCurrentWord();
+            var fullSentence = Win32Caret.TryGetTextForOverlayContext(out var liveFieldText)
+                ? liveFieldText
+                : _inputService.GetFullSentenceForOverlay();
+
+            var lineForAi = string.IsNullOrWhiteSpace(fullSentence)
+                ? (string.IsNullOrWhiteSpace(context) ? word : $"{context} {word}".Trim())
+                : fullSentence;
+
+            var requestFingerprint = context + "\u001f" + word + "\u001f" + lineForAi;
+
+            var maxAi = Math.Clamp(aiWriter.OverlayAiMaxSuggestions, 1, 9);
+            using var apiTimeout = new CancellationTokenSource(Math.Clamp(aiWriter.OverlayAiTimeoutMs, 400, 10_000));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(debounceToken, apiTimeout.Token);
+
+            var options = BuildLocalOverlayLlmOptions();
+            var lines = await OverlayLocalLlmEnrichment.FetchSuggestionLinesAsync(
+                _localOverlayHttp,
+                options,
+                lineForAi,
+                context,
+                word,
+                _writerContext.GetSnapshot(),
+                linked.Token).ConfigureAwait(false);
+
+            if (gen != _overlayAiGeneration || lines.Count == 0)
+            {
+                return;
+            }
+
+            var aiResults = lines.Select(t => new AiSuggestionResult { Text = t }).ToList();
+
+            DeferWriterUi(() =>
+            {
+                if (gen != _overlayAiGeneration || !_hasValidTextInput)
+                {
+                    return;
+                }
+
+                var ctxNow = _inputService.GetSuggestionContextPrefix();
+                var wNow = _inputService.GetCurrentWord();
+                var fullNow = Win32Caret.TryGetTextForOverlayContext(out var liveNow)
+                    ? liveNow
+                    : _inputService.GetFullSentenceForOverlay();
+                var lineNow = string.IsNullOrWhiteSpace(fullNow)
+                    ? (string.IsNullOrWhiteSpace(ctxNow) ? wNow : $"{ctxNow} {wNow}".Trim())
+                    : fullNow;
+                var fpNow = ctxNow + "\u001f" + wNow + "\u001f" + lineNow;
+
+                if (!string.Equals(requestFingerprint, fpNow, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                List<SuggestionItem> freshLocal;
+                lock (_writerStateLock)
+                {
+                    freshLocal = _predictionService.GetSuggestions(ctxNow, wNow, _writerContext.GetSnapshot()).ToList();
+                }
+
+                var merged = MergeAiOverlaySuggestions(freshLocal, aiResults, maxAi);
+                lock (_writerStateLock)
+                {
+                    _currentSuggestions = merged;
+                }
+
+                _overlayService.SetOverlayStatusHint(null);
+                _overlayService.ShowSuggestions(merged);
+            });
+        }
+        catch (OperationCanceledException)
+        {
+            /* debounce or timeout */
+        }
+        catch (Exception ex)
+        {
+            _loggingService.Debug($"Overlay local LLM: {ex.Message}");
         }
     }
 
@@ -1135,6 +1261,11 @@ public class ApplicationService : IDisposable
 
         _predictionService.LearnPhrase(normalized);
 
+        if (_predictionService is CompositePredictionService compositeSentence)
+        {
+            compositeSentence.NotifySentenceCommitted(normalized);
+        }
+
         _learningEngine.OnSentenceCompleted(normalized, _writerContext.GetSnapshot());
 
         if (!_inputService.IsInProtectedField)
@@ -1536,6 +1667,7 @@ public class ApplicationService : IDisposable
         }
 
         _aiVocabGate.Dispose();
+        _localOverlayHttp.Dispose();
         _loggingService.Information("Application shutdown");
     }
 }

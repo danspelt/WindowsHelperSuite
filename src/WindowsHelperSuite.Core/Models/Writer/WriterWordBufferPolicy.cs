@@ -11,9 +11,10 @@ public static class WriterWordBufferPolicy
 
     /// <summary>
     /// Whether this keystroke may start a Writer typing session or restore validated text input after caret loss.
-    /// Digits, symbols, and punctuation do not wake the session; see <c>InputService.OnKeyPressed</c>.
+    /// Letters and digits can wake the session; other symbols and punctuation do not; see <c>InputService.OnKeyPressed</c>.
     /// </summary>
-    public static bool CanStartWriterSessionFromKeystroke(char ch) => char.IsLetter(ch);
+    public static bool CanStartWriterSessionFromKeystroke(char ch) =>
+        char.IsLetter(ch) || char.IsDigit(ch);
 
     /// <summary>
     /// For text before the current partial word, finds where deletion should start to remove the last whitespace-delimited

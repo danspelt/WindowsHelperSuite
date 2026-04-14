@@ -41,8 +41,17 @@ public class AiWriterSettings
 
     // ── Writer overlay (prediction) AI enrichments ──
 
-    /// <summary>When true and <see cref="ApiKey"/> is set, overlay suggestions are augmented with short LLM continuations after a brief debounce.</summary>
+    /// <summary>When true, overlay suggestions can be augmented after a brief debounce (cloud if <see cref="ApiKey"/> is set, otherwise local LM Studio when <see cref="EnableOverlayLocalLlm"/>).</summary>
     public bool EnableOverlayAiSuggestions { get; set; } = true;
+
+    /// <summary>When overlay AI is on and <see cref="ApiKey"/> is empty, call this OpenAI-compatible server (LM Studio default).</summary>
+    public bool EnableOverlayLocalLlm { get; set; } = true;
+
+    /// <summary>API root including <c>/v1</c>, e.g. <c>http://localhost:1234/v1</c> (chat completions are appended).</summary>
+    public string OverlayLocalLlmBaseUrl { get; set; } = "http://localhost:1234/v1";
+
+    /// <summary>Model id sent to the local server; empty uses <see cref="Model"/>.</summary>
+    public string OverlayLocalLlmModel { get; set; } = "";
 
     /// <summary>Max AI lines to request (each becomes one overlay slot, merged ahead of local predictions).</summary>
     public int OverlayAiMaxSuggestions { get; set; } = 4;

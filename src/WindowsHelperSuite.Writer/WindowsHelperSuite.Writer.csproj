@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>WindowsHelperSuite.Writer</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WindowsHelperSuite.Core\WindowsHelperSuite.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\WindowsHelperSuite.Prediction\Resources\english-words.txt">
+      <Link>Resources\english-words.txt</Link>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>

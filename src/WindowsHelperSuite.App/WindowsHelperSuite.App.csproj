@@ -6,6 +6,7 @@
     <ProjectReference Include="..\WindowsHelperSuite.Infrastructure\WindowsHelperSuite.Infrastructure.csproj" />
     <ProjectReference Include="..\WindowsHelperSuite.Input\WindowsHelperSuite.Input.csproj" />
     <ProjectReference Include="..\WindowsHelperSuite.Prediction\WindowsHelperSuite.Prediction.csproj" />
+    <ProjectReference Include="..\WindowsHelperSuite.Writer\WindowsHelperSuite.Writer.csproj" />
     <ProjectReference Include="..\WindowsHelperSuite.Overlay\WindowsHelperSuite.Overlay.csproj" />
     <ProjectReference Include="..\WindowsHelperSuite.Speech\WindowsHelperSuite.Speech.csproj" />
     <ProjectReference Include="..\WindowsHelperSuite.Hotkeys\WindowsHelperSuite.Hotkeys.csproj" />
