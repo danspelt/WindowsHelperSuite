@@ -39,6 +39,17 @@ public sealed class SpeechService : ISpeechService, IDisposable
     private long _lastKeystrokeTick;
     private volatile bool _mutedBySpeed;
 
+    // ── Predictive speech (dreamlike feel) ──
+    private string? _previewedText;
+    private long _previewedAtTicks;
+    private const int PreviewWindowMs = 4000; // Consider preview "fresh" for 4 seconds
+    private const double PreviewRateBoost = 0.25; // Speak previews slightly faster
+    private const float PreviewVolumeFactor = 0.85f; // Slightly quieter for previews
+
+    // ── Smart continuation (dreamlike: don't interrupt if continuing the phrase) ──
+    private string? _currentlySpeakingText;
+    private long _startedSpeakingAtTicks;
+
     public SpeechService(Func<SpeechSettings> getSettings, ILoggingService? log = null)
     {
         _getSettings = getSettings ?? throw new ArgumentNullException(nameof(getSettings));
@@ -111,6 +122,67 @@ public sealed class SpeechService : ISpeechService, IDisposable
         return _mutedBySpeed;
     }
 
+    /// <summary>
+    /// Previews a high-confidence suggestion quietly and quickly before user accepts it.
+    /// Call this when showing suggestions - if the user later accepts, Speak() will skip re-speaking.
+    /// </summary>
+    public void PreviewSuggestion(string text)
+    {
+        var normalized = NormalizeSpokenText(text);
+        if (string.IsNullOrWhiteSpace(normalized) || _disposed)
+            return;
+
+        if (!MaySpeak(_getSettings()))
+            return;
+
+        // Don't preview if typing fast
+        if (IsTypingCooldownActive())
+            return;
+
+        var settings = _getSettings();
+        if (!settings.EnableSpeechOnHighlight)
+            return; // Respect user's highlight speech setting
+
+        // Track what we're previewing
+        _previewedText = normalized;
+        _previewedAtTicks = Environment.TickCount64;
+
+        // Use whisper mode: faster rate, lower volume
+        var savedRate = _rate;
+        var savedVol = _volume;
+        _rate = Math.Min(_rate + PreviewRateBoost, 2.0);
+        _volume = Math.Min(_volume * PreviewVolumeFactor, 0.7f);
+
+        try
+        {
+            // Cancel any ongoing speech first for responsiveness
+            CancelActiveSynthesis();
+            var token = BeginNewUtterance();
+            _ = RouteSpeakAsync(normalized, token);
+        }
+        finally
+        {
+            // Restore settings immediately (preview runs async)
+            _rate = savedRate;
+            _volume = savedVol;
+        }
+    }
+
+    /// <summary>
+    /// Checks if text was recently previewed. Used by Speak() to avoid re-speaking accepted suggestions.
+    /// </summary>
+    private bool WasRecentlyPreviewed(string text)
+    {
+        if (_previewedText == null)
+            return false;
+
+        var elapsed = Environment.TickCount64 - _previewedAtTicks;
+        if (elapsed > PreviewWindowMs)
+            return false;
+
+        return _previewedText.Equals(text, StringComparison.OrdinalIgnoreCase);
+    }
+
     public async void Speak(string text)
     {
         var normalizedText = NormalizeSpokenText(text);
@@ -119,14 +191,33 @@ public sealed class SpeechService : ISpeechService, IDisposable
             return;
         }
 
+        // Skip if we just previewed this word (dreamlike: already heard it!)
+        if (WasRecentlyPreviewed(normalizedText))
+        {
+            _log?.Debug($"Speech skipped (recently previewed): {normalizedText}");
+            return;
+        }
+
         if (!MaySpeak(_getSettings()))
         {
+            return;
+        }
+
+        // Smart continuation: if we're speaking "hello world" and user accepts "world",
+        // don't interrupt - just let it finish or skip if already said
+        if (IsSpeakingContinuation(normalizedText))
+        {
+            _log?.Debug($"Speech continuation detected: {normalizedText}");
             return;
         }
 
         ClearQueue();
         CancelActiveSynthesis();
         var token = BeginNewUtterance();
+
+        // Track what we're about to speak
+        _currentlySpeakingText = normalizedText;
+        _startedSpeakingAtTicks = Environment.TickCount64;
 
         try
         {
@@ -140,6 +231,41 @@ public sealed class SpeechService : ISpeechService, IDisposable
         {
             _log?.Warning($"Speech routing error: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Checks if the text is a continuation of what's currently being spoken.
+    /// If user accepts "world" while we're saying "hello world", we should not interrupt.
+    /// </summary>
+    private bool IsSpeakingContinuation(string text)
+    {
+        if (_currentlySpeakingText == null || !_isSpeaking)
+            return false;
+
+        var elapsed = Environment.TickCount64 - _startedSpeakingAtTicks;
+        if (elapsed > 3000) // Only consider recent speech (3 second window)
+            return false;
+
+        // Check if currently speaking text contains or starts with the new text
+        // e.g., speaking "hello world" and text is "world" = continuation
+        var current = _currentlySpeakingText;
+        if (current.Equals(text, StringComparison.OrdinalIgnoreCase))
+            return true; // Already saying exactly this
+
+        if (current.EndsWith(text, StringComparison.OrdinalIgnoreCase))
+            return true; // Currently speaking ends with this word
+
+        // Check if this is the next word in what we're speaking
+        var currentWords = current.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var newWords = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (currentWords.Length > 0 && newWords.Length > 0)
+        {
+            // If currently speaking ends with the first word of new text, it's a continuation
+            if (currentWords[^1].Equals(newWords[0], StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

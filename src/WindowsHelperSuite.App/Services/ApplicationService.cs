@@ -492,6 +492,9 @@ public class ApplicationService : IDisposable
 
         _overlayService.ShowSuggestions(suggestions);
 
+        // Dreamlike: preview the most likely suggestion before user accepts it
+        PreviewTopSuggestion(suggestions);
+
         ScheduleOverlayAiEnrichment();
     }
 
@@ -925,6 +928,42 @@ public class ApplicationService : IDisposable
         }
     }
 
+    private string? _lastPreviewedText;
+
+    /// <summary>
+    /// Dreamlike feature: quietly preview the top suggestion before user accepts it.
+    /// If the user accepts it, the normal speech will skip re-speaking (already heard it!)
+    /// </summary>
+    private void PreviewTopSuggestion(IReadOnlyList<SuggestionItem> suggestions)
+    {
+        if (suggestions.Count == 0)
+            return;
+
+        var top = suggestions[0];
+
+        // Only preview high-confidence suggestions (score > 2500)
+        if (top.Score < 2500)
+            return;
+
+        // Skip phrases - too long for preview, and user might not want them
+        if (top.Kind == SuggestionKind.PhraseCompletion || top.DisplayText.Contains(' '))
+            return;
+
+        // Skip if we already previewed this exact word recently
+        if (string.Equals(_lastPreviewedText, top.DisplayText, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        // Only preview if speech is enabled for highlighting
+        var speech = _settingsService.Settings.Speech;
+        if (!speech.EnableSpeechOnHighlight)
+            return;
+
+        _lastPreviewedText = top.DisplayText;
+
+        // Whisper-preview the suggestion (faster, quieter)
+        _speechService.PreviewSuggestion(top.DisplayText);
+    }
+
     private void RegisterHotkeyActions()
     {
         _hotkeyService.RegisterAction("VolumeUp", () =>
@@ -1081,6 +1120,7 @@ public class ApplicationService : IDisposable
     }
 
     private string _previousWord = string.Empty;
+    private string _wordBeforePrevious = string.Empty; // For trigram learning
 
     /// <summary>Runs on the keyboard hook thread — only SendInput + buffer fix; must stay synchronous.</summary>
     private string ApplyWordCapitalizationInjectionIfNeeded(WordTypedEventArgs e)
@@ -1124,11 +1164,13 @@ public class ApplicationService : IDisposable
 
         if (!string.IsNullOrWhiteSpace(_previousWord) && !string.IsNullOrWhiteSpace(word))
         {
-            _predictionService.LearnBigram(_previousWord, word);
+            // Dreamlike: Learn with trigram context for better next-word prediction
+            _predictionService.LearnBigramWithContext(_wordBeforePrevious, _previousWord, word);
         }
 
         _learningEngine.OnWordCommitted(word, e.TextBeforeWord, _writerContext.GetSnapshot());
 
+        _wordBeforePrevious = _previousWord;
         _previousWord = word.Trim().ToLowerInvariant();
 
         if (_settingsService.Settings.Speech.EnableSpeechOnSelection &&
@@ -1329,11 +1371,12 @@ public class ApplicationService : IDisposable
         var parts = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         foreach (var part in parts)
         {
-            // Learn bigrams from accepted suggestion words too
+            // Learn bigrams/trigrams from accepted suggestion words too
             if (!string.IsNullOrWhiteSpace(_previousWord) && !string.IsNullOrWhiteSpace(part))
             {
-                _predictionService.LearnBigram(_previousWord, part);
+                _predictionService.LearnBigramWithContext(_wordBeforePrevious, _previousWord, part);
             }
+            _wordBeforePrevious = _previousWord;
             _previousWord = part.Trim().ToLowerInvariant();
             AppendContext(part);
         }

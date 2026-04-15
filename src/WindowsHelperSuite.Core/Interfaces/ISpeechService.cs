@@ -18,4 +18,10 @@ public interface ISpeechService
     void SetRate(double rate);
     void SetVolume(float volume);
     void NotifyKeystroke();
+
+    /// <summary>
+    /// Dreamlike feature: quietly preview a high-confidence suggestion before user accepts it.
+    /// If the user accepts it, Speak() will skip re-speaking (already heard it!)
+    /// </summary>
+    void PreviewSuggestion(string text);
 }

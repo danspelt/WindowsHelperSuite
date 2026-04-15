@@ -166,6 +166,16 @@ public static class Win32Caret
         }
     }
 
+    /// <summary>
+    /// Gets the bounding rectangle of the focused text input control (via UI Automation).
+    /// Returns true if bounds are available, false otherwise.
+    /// Used to avoid covering the text field with the overlay.
+    /// </summary>
+    public static bool TryGetTextInputBounds(out System.Windows.Rect bounds)
+    {
+        return TryGetUiAutomationTextInputBounds(out bounds);
+    }
+
     private static bool TryGetUiAutomationTextInputBounds(out System.Windows.Rect bounds)
     {
         bounds = System.Windows.Rect.Empty;

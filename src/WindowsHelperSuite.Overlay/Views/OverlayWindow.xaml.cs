@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 using WindowsHelperSuite.Core.Models;
 using WindowsHelperSuite.Infrastructure.Hooks;
 
@@ -10,6 +11,12 @@ namespace WindowsHelperSuite.Overlay.Views;
 
 public partial class OverlayWindow : Window
 {
+    // Attached property to store suggestion score for glow effects
+    public static readonly DependencyProperty AttachedSuggestionScoreProperty =
+        DependencyProperty.RegisterAttached("AttachedSuggestionScore",
+            typeof(double), typeof(OverlayWindow),
+            new PropertyMetadata(0.0));
+
     private List<SuggestionItem> _currentSuggestions = [];
     private int _currentPage = 0;
     private int _totalPages = 1;
@@ -391,7 +398,7 @@ public partial class OverlayWindow : Window
             Child = new TextBlock
             {
                 Text = suggestion.Slot.ToString(),
-                FontSize = 12.5,
+                FontSize = 15,
                 FontWeight = FontWeights.Bold,
                 Foreground = new SolidColorBrush(Color.FromRgb(0x0F, 0x0F, 0x14)),
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -405,19 +412,19 @@ public partial class OverlayWindow : Window
         {
             Orientation = Orientation.Vertical,
             VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 248 : 360
+            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 298 : 432
         };
 
         var textBlock = new TextBlock
         {
             Text = suggestion.DisplayText,
-            FontSize = 17,
+            FontSize = 20,
             FontFamily = new FontFamily("Segoe UI"),
             FontWeight = FontWeights.SemiBold,
             Foreground = (Brush)FindResource("TextPrimary"),
             VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
-            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 248 : 360
+            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 298 : 432
         };
 
         textPanel.Children.Add(textBlock);
@@ -425,7 +432,7 @@ public partial class OverlayWindow : Window
         var kindLabel = new TextBlock
         {
             Text = GetSuggestionKindLabel(suggestion.Kind),
-            FontSize = 11,
+            FontSize = 13,
             FontFamily = new FontFamily("Segoe UI"),
             FontWeight = FontWeights.SemiBold,
             Foreground = (Brush)FindResource("TextSecondary"),
@@ -442,18 +449,27 @@ public partial class OverlayWindow : Window
             Tag = suggestion.Slot,
             Style = (Style)FindResource("SuggestionButtonStyle"),
             Opacity = 0,
-            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 300 : 440,
+            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 360 : 528,
             ToolTip = BuildSuggestionToolTip(suggestion),
             Margin = _currentLayout == OverlayLayout.Horizontal
-                ? new Thickness(4, 0, 4, 0)
-                : new Thickness(0, 4, 0, 4)
+                ? new Thickness(5, 0, 5, 0)
+                : new Thickness(0, 5, 0, 5)
         };
+
+        // Store score for glow animation
+        button.SetValue(AttachedSuggestionScoreProperty, suggestion.Score);
+
+        // Apply glow effect to high-confidence suggestions (score > 3000)
+        if (suggestion.Score > 3000)
+        {
+            ApplyGlowEffect(button, suggestion.Score);
+        }
 
         button.RenderTransformOrigin = new Point(0.5, 0.5);
         button.RenderTransform = new TranslateTransform
         {
-            X = _currentLayout == OverlayLayout.Horizontal ? 12 : 0,
-            Y = _currentLayout == OverlayLayout.Vertical ? 12 : 0
+            X = _currentLayout == OverlayLayout.Horizontal ? 14 : 0,
+            Y = _currentLayout == OverlayLayout.Vertical ? 14 : 0
         };
 
         button.Click += (s, e) =>
@@ -536,7 +552,7 @@ public partial class OverlayWindow : Window
         }
     }
 
-    public void PositionNearPoint(int caretX, int caretY, ScreenPosition preferredPosition)
+    public void PositionNearPoint(int caretX, int caretY, ScreenPosition preferredPosition, Rect? textFieldBounds = null)
     {
         UpdateLayout();
 
@@ -575,23 +591,32 @@ public partial class OverlayWindow : Window
         var windowHeight = measuredHeight > 0 ? measuredHeight : 80;
 
         // RULE: Never cover the caret or active input line
-        const double gapBelow = 24;
-        const double gapAbove = 80;
+        // Increased gaps to ensure the text line is never covered
+        const double gapBelow = 40;  // Was 24 — too small, text line is ~20-30px
+        const double gapAbove = 48;  // Was 80 — generous enough for above placement
         double left = caretX;
         double top;
 
-        var spaceBelow = screenBottom - (caretY + gapBelow);
-        var spaceAbove = caretY - screenTop - gapAbove;
+        // If we have text field bounds, use them to calculate safe placement zones
+        var fieldBottom = textFieldBounds?.Bottom ?? (caretY + gapBelow);
+        var fieldTop = textFieldBounds?.Top ?? (caretY - gapAbove);
+        var fieldLeft = textFieldBounds?.Left ?? caretX;
+        var fieldRight = textFieldBounds?.Right ?? caretX;
+
+        // Space available below the text field (not just below the caret)
+        var spaceBelowField = screenBottom - fieldBottom;
+        // Space available above the text field
+        var spaceAboveField = fieldTop - screenTop;
 
         if (preferredPosition == ScreenPosition.Above)
         {
-            if (spaceAbove >= windowHeight)
+            if (spaceAboveField >= windowHeight)
             {
-                top = caretY - windowHeight - gapAbove;
+                top = fieldTop - windowHeight;
             }
-            else if (spaceBelow >= windowHeight)
+            else if (spaceBelowField >= windowHeight)
             {
-                top = caretY + gapBelow;
+                top = fieldBottom;
             }
             else
             {
@@ -600,13 +625,13 @@ public partial class OverlayWindow : Window
         }
         else if (preferredPosition == ScreenPosition.Below)
         {
-            if (spaceBelow >= windowHeight)
+            if (spaceBelowField >= windowHeight)
             {
-                top = caretY + gapBelow;
+                top = fieldBottom;
             }
-            else if (spaceAbove >= windowHeight)
+            else if (spaceAboveField >= windowHeight)
             {
-                top = caretY - windowHeight - gapAbove;
+                top = fieldTop - windowHeight;
             }
             else
             {
@@ -615,14 +640,14 @@ public partial class OverlayWindow : Window
         }
         else
         {
-            // Auto, Left, Right (left/right not specialized — prefer above then below)
-            if (spaceAbove >= windowHeight)
+            // Auto, Left, Right — prefer above then below
+            if (spaceAboveField >= windowHeight)
             {
-                top = caretY - windowHeight - gapAbove;
+                top = fieldTop - windowHeight;
             }
-            else if (spaceBelow >= windowHeight)
+            else if (spaceBelowField >= windowHeight)
             {
-                top = caretY + gapBelow;
+                top = fieldBottom;
             }
             else
             {
@@ -633,6 +658,34 @@ public partial class OverlayWindow : Window
         // Ensure window stays on the correct monitor work area horizontally and vertically
         left = Math.Max(screenLeft + 4, Math.Min(left, screenRight - windowWidth - 4));
         top = Math.Max(screenTop, Math.Min(top, screenBottom - windowHeight));
+
+        // Final overlap check: if the overlay still overlaps the text field, push it away
+        if (textFieldBounds is { } tfBounds)
+        {
+            var overlayRect = new Rect(left, top, windowWidth, windowHeight);
+            var textFieldRect = new Rect(tfBounds.Left, tfBounds.Top, tfBounds.Width, tfBounds.Height);
+
+            if (overlayRect.IntersectsWith(textFieldRect))
+            {
+                // Calculate how much we need to shift to clear the text field
+                var shiftBelow = tfBounds.Bottom - top;       // Shift down to get below field
+                var shiftAbove = (top + windowHeight) - tfBounds.Top; // Shift up to get above field
+
+                // Pick the smaller shift that stays on screen
+                var canShiftBelow = (top + shiftBelow + windowHeight) <= screenBottom;
+                var canShiftAbove = (top - shiftAbove) >= screenTop;
+
+                if (canShiftBelow && (!canShiftAbove || shiftBelow <= shiftAbove))
+                {
+                    top = tfBounds.Bottom;
+                }
+                else if (canShiftAbove)
+                {
+                    top = tfBounds.Top - windowHeight;
+                }
+                // If neither works, keep current position (edge case: field is larger than screen)
+            }
+        }
 
         Left = left;
         Top = top;
@@ -645,7 +698,7 @@ public partial class OverlayWindow : Window
         int overlayFadeTransitionMs = 110)
     {
         _overlayFadeTransitionMs = Math.Clamp(overlayFadeTransitionMs, 0, 600);
-        var baseFontSize = largeTextMode ? Math.Max(fontSize * 1.5, 20) : Math.Max(fontSize, 16);
+        var baseFontSize = largeTextMode ? Math.Max(fontSize * 1.5, 24) : Math.Max(fontSize, 19);
         Opacity = Math.Clamp(opacity, 0.35, 1.0);
 
         var ff = new System.Windows.Media.FontFamily(
@@ -685,7 +738,7 @@ public partial class OverlayWindow : Window
                 }
             }
 
-            child.MinHeight = largeTextMode ? 64 : 48;
+            child.MinHeight = largeTextMode ? 77 : 58;
         }
 
         ContextLabel.FontSize = Math.Max(baseFontSize - 4, 12);
@@ -825,6 +878,42 @@ public partial class OverlayWindow : Window
 
             translateTransform.BeginAnimation(property, slideAnimation);
         }
+    }
+
+    private void ApplyGlowEffect(Button button, double score)
+    {
+        // Higher score = stronger glow (score 3000-5000 range)
+        var intensity = Math.Min((score - 3000) / 2000.0, 1.0); // 0.0 to 1.0
+        var blurRadius = 15 + (intensity * 15); // 15-30
+        var opacity = 0.2 + (intensity * 0.25); // 0.2-0.45
+
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
+        {
+            button.ApplyTemplate();
+            if (button.Template?.FindName("glowBorder", button) is not System.Windows.Controls.Border glowBorder)
+            {
+                return;
+            }
+
+            glowBorder.Opacity = 1;
+            if (glowBorder.Effect is DropShadowEffect glowEffect)
+            {
+                glowEffect.BlurRadius = blurRadius;
+                glowEffect.Opacity = opacity;
+
+                // Animate the glow intensity
+                var pulseAnimation = new DoubleAnimation
+                {
+                    From = opacity * 0.7,
+                    To = opacity,
+                    Duration = TimeSpan.FromMilliseconds(1500),
+                    AutoReverse = true,
+                    RepeatBehavior = RepeatBehavior.Forever,
+                    EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+                };
+                glowEffect.BeginAnimation(DropShadowEffect.OpacityProperty, pulseAnimation);
+            }
+        });
     }
 }
 

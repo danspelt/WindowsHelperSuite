@@ -194,6 +194,8 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
 
     public void LearnBigram(string previousWord, string currentWord) => _wordBank.LearnBigram(previousWord, currentWord);
 
+    public void LearnBigramWithContext(string? wordBefore, string previousWord, string currentWord) => _wordBank.LearnBigramWithContext(wordBefore, previousWord, currentWord);
+
     public void AcceptWord(string word)
     {
         _wordBank.AcceptWord(word);

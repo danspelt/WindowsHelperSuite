@@ -63,8 +63,8 @@ public class PredictionService : IPredictionService, IDisposable
     {
         var normalizedWord = NormalizeWord(currentWord);
         var normalizedContext = NormalizePhrase(context);
-        var lastContextWord = GetLastWord(normalizedContext);
-        var contextNextWords = GetContextNextWords(lastContextWord);
+        var (wordBeforeLast, lastContextWord) = GetLastTwoWords(normalizedContext);
+        var contextNextWords = GetContextNextWords(lastContextWord, wordBeforeLast);
 
         lock (_syncRoot)
         {
@@ -112,7 +112,8 @@ public class PredictionService : IPredictionService, IDisposable
             else if (!string.IsNullOrWhiteSpace(lastContextWord))
             {
                 // No current word typed yet, but we have context → suggest next words
-                suggestions.AddRange(GetNextWordSuggestions(lastContextWord, contextNextWords));
+                // Use trigram scoring if we have 2+ words of context
+                suggestions.AddRange(GetNextWordSuggestions(lastContextWord, contextNextWords, wordBeforeLast));
 
                 // Also show phrases that continue the context (saves the most typing)
                 suggestions.AddRange(GetContextPhraseSuggestions(normalizedContext, lastContextWord));
@@ -450,6 +451,15 @@ public class PredictionService : IPredictionService, IDisposable
 
     public void LearnBigram(string previousWord, string currentWord)
     {
+        LearnBigramWithContext(null, previousWord, currentWord);
+    }
+
+    /// <summary>
+    /// Dreamlike: Learn bigrams with optional context word before.
+    /// When wordBefore is provided, also learns the trigram "wordBefore previousWord currentWord".
+    /// </summary>
+    public void LearnBigramWithContext(string? wordBefore, string previousWord, string currentWord)
+    {
         var prev = NormalizeWord(previousWord);
         var curr = NormalizeWord(currentWord);
         if (string.IsNullOrWhiteSpace(prev) || string.IsNullOrWhiteSpace(curr))
@@ -457,9 +467,10 @@ public class PredictionService : IPredictionService, IDisposable
             return;
         }
 
-        var key = $"{prev} {curr}";
         lock (_syncRoot)
         {
+            // Learn bigram
+            var key = $"{prev} {curr}";
             if (_bigramIndex.TryGetValue(key, out var existing))
             {
                 existing.Frequency = Math.Min(existing.Frequency + 1, 200);
@@ -477,6 +488,26 @@ public class PredictionService : IPredictionService, IDisposable
                 var entry = new WordBankEntry { Text = key, Frequency = 1 };
                 _store.Bigrams.Add(entry);
                 _bigramIndex[key] = entry;
+            }
+
+            // Also learn trigram if we have context
+            if (!string.IsNullOrWhiteSpace(wordBefore))
+            {
+                var wb = NormalizeWord(wordBefore);
+                if (!string.IsNullOrWhiteSpace(wb))
+                {
+                    var trigramKey = $"{wb} {prev} {curr}";
+                    if (_bigramIndex.TryGetValue(trigramKey, out var triExisting))
+                    {
+                        triExisting.Frequency = Math.Min(triExisting.Frequency + 1, 200);
+                    }
+                    else if (_store.Bigrams.Count < MaxBigrams)
+                    {
+                        var triEntry = new WordBankEntry { Text = trigramKey, Frequency = 1 };
+                        _store.Bigrams.Add(triEntry);
+                        _bigramIndex[trigramKey] = triEntry;
+                    }
+                }
             }
 
             ScheduleSave();
@@ -705,7 +736,7 @@ public class PredictionService : IPredictionService, IDisposable
         return phrase.StartsWith(currentWord, StringComparison.OrdinalIgnoreCase);
     }
 
-    private IEnumerable<SuggestionCandidate> GetNextWordSuggestions(string lastContextWord, HashSet<string> contextNextWords)
+    private IEnumerable<SuggestionCandidate> GetNextWordSuggestions(string lastContextWord, HashSet<string> contextNextWords, string wordBeforeLast = "")
     {
         // Suggest words that commonly follow the previous word
         foreach (var nextWord in contextNextWords)
@@ -713,7 +744,19 @@ public class PredictionService : IPredictionService, IDisposable
             if (_wordIndex.TryGetValue(nextWord, out var entry))
             {
                 var rank = GetBigramRank(lastContextWord, entry.Text);
-                var score = 2000 - (rank * 30) + (entry.Frequency * 5);
+                var trigramBoost = 0;
+
+                // TRIGRAM BONUS: If we have 2 words of context, check if this completes a trigram
+                if (!string.IsNullOrWhiteSpace(wordBeforeLast))
+                {
+                    var trigramRank = GetTrigramRank(wordBeforeLast, lastContextWord, entry.Text);
+                    if (trigramRank < 50) // Found a trigram match
+                    {
+                        trigramBoost = 800 - (trigramRank * 25); // Significant boost for trigram matches
+                    }
+                }
+
+                var score = 2000 - (rank * 30) + (entry.Frequency * 5) + trigramBoost;
                 yield return new SuggestionCandidate(
                     entry.Text,
                     entry.Text,
@@ -721,6 +764,18 @@ public class PredictionService : IPredictionService, IDisposable
                     score);
             }
         }
+    }
+
+    private int GetTrigramRank(string word1, string word2, string word3)
+    {
+        // Check learned trigrams (stored as "word1 word2 word3" in bigram index)
+        var key = $"{word1} {word2} {word3}";
+        if (_bigramIndex.TryGetValue(key, out var learned))
+        {
+            return Math.Max(0, 3 - Math.Min(learned.Frequency, 3)); // Learned trigrams rank very high
+        }
+
+        return 50; // No trigram match
     }
 
     private static readonly HashSet<string> _starterSet = new(EnglishDictionary.SentenceStarters, StringComparer.OrdinalIgnoreCase);
@@ -785,12 +840,28 @@ public class PredictionService : IPredictionService, IDisposable
             });
     }
 
-    private HashSet<string> GetContextNextWords(string lastContextWord)
+    private HashSet<string> GetContextNextWords(string lastContextWord, string wordBeforeLast = "")
     {
         var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (string.IsNullOrWhiteSpace(lastContextWord))
         {
             return result;
+        }
+
+        // TRIGRAM: Check "wordBeforeLast + lastContextWord" first for stronger context
+        if (!string.IsNullOrWhiteSpace(wordBeforeLast))
+        {
+            var trigramKey = $"{wordBeforeLast} {lastContextWord}";
+            // Static trigram map (if we had one) would go here
+            // For now, boost learned bigrams that match the trigram pattern
+            foreach (var bigram in _store.Bigrams.Where(b => b.Text.StartsWith(trigramKey + " ", StringComparison.OrdinalIgnoreCase)))
+            {
+                var parts = bigram.Text.Split(' ', 3);
+                if (parts.Length >= 3)
+                {
+                    result.Add(parts[2]); // Third word in trigram
+                }
+            }
         }
 
         // Static bigram map
@@ -847,6 +918,25 @@ public class PredictionService : IPredictionService, IDisposable
 
         var parts = context.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return parts.Length > 0 ? parts[^1] : string.Empty;
+    }
+
+    private static (string Word1, string Word2) GetLastTwoWords(string context)
+    {
+        if (string.IsNullOrWhiteSpace(context))
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        var parts = context.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2)
+        {
+            return (parts[^2], parts[^1]);
+        }
+        else if (parts.Length == 1)
+        {
+            return (string.Empty, parts[0]);
+        }
+        return (string.Empty, string.Empty);
     }
 
     private double CalculateWordScore(WordBankEntry entry, string currentWord, HashSet<string> contextNextWords)

@@ -22,15 +22,15 @@ public sealed class WriterWordBufferPolicyTests
     [InlineData('a', true)]
     [InlineData('Z', true)]
     [InlineData('é', true)]
-    [InlineData('0', true)]
-    [InlineData('9', true)]
+    [InlineData('0', false)]
+    [InlineData('9', false)]
     [InlineData('\'', false)]
     [InlineData('-', false)]
     [InlineData(' ', false)]
     [InlineData('.', false)]
     [InlineData('@', false)]
     [InlineData('©', false)]
-    public void CanStartWriterSessionFromKeystroke_letters_and_digits(char ch, bool expected) =>
+    public void CanStartWriterSessionFromKeystroke_letters_only(char ch, bool expected) =>
         WriterWordBufferPolicy.CanStartWriterSessionFromKeystroke(ch).Should().Be(expected);
 
     [Fact]

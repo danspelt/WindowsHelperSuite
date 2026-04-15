@@ -196,9 +196,16 @@ public class OverlayService : IOverlayService, IDisposable
         var pos = MapCaretPlacement();
         RunOnUiThread(() => _overlayWindow?.SetLayout(_layout));
 
+        // Try to get text field bounds for overlap avoidance
+        System.Windows.Rect? textFieldBounds = null;
+        if (Win32Caret.TryGetTextInputBounds(out var bounds) && !bounds.IsEmpty)
+        {
+            textFieldBounds = bounds;
+        }
+
         if (Win32Caret.GetCaretPosition(out var x, out var y))
         {
-            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, pos));
+            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, pos, textFieldBounds));
             if (x != _lastLogCaretX || y != _lastLogCaretY)
             {
                 _lastLogCaretX = x;
@@ -211,7 +218,7 @@ public class OverlayService : IOverlayService, IDisposable
             var screen = System.Windows.SystemParameters.WorkArea;
             var centerX = (int)(screen.Left + screen.Width / 2);
             var centerY = (int)(screen.Top + screen.Height / 2);
-            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(centerX, centerY, pos));
+            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(centerX, centerY, pos, textFieldBounds));
             if (centerX != _lastLogCaretX || centerY != _lastLogCaretY)
             {
                 _lastLogCaretX = centerX;
