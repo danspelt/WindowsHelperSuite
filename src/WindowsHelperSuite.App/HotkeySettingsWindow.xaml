@@ -593,10 +593,10 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="Opacity" FontSize="14" Foreground="#D8D8F0"/>
-                                    <TextBlock Text="Overlay transparency" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                    <TextBlock Text="Lower = more see-through panel (host app behind overlay); text stays sharp" FontSize="11" Foreground="#55558A" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <Slider x:Name="OpacitySlider" Grid.Column="1"
-                                        Minimum="25" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True"
+                                        Minimum="10" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True"
                                         Margin="12,0,8,0" VerticalAlignment="Center"
                                         ValueChanged="OpacitySlider_ValueChanged"/>
                                 <Border Grid.Column="2" Background="#12122A" CornerRadius="6" Padding="6,4">

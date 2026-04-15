@@ -160,7 +160,7 @@ public partial class HotkeySettingsWindow : Window
         _pendingFontSize = Math.Clamp(ui.FontSize, 8, 36);
         _pendingFontFamily = string.IsNullOrWhiteSpace(ui.FontFamily) ? "Segoe UI" : ui.FontFamily;
         _pendingFontWeight = string.IsNullOrWhiteSpace(ui.FontWeight) ? "SemiBold" : ui.FontWeight;
-        _pendingOpacity  = Math.Clamp(ui.Opacity * 100, 25, 100);
+        _pendingOpacity  = Math.Clamp(ui.Opacity * 100, 10, 100);
         _pendingLargeText = ui.LargeTextMode;
         _pendingLayout = ui.Layout;
         _pendingOverlayCaretPlacement = ui.OverlayCaretPlacement;
@@ -877,7 +877,7 @@ public partial class HotkeySettingsWindow : Window
         ui.FontSize               = _pendingFontSize;
         ui.FontFamily             = _pendingFontFamily;
         ui.FontWeight             = _pendingFontWeight;
-        ui.Opacity                = Math.Clamp(_pendingOpacity / 100.0, 0.25, 1.0);
+        ui.Opacity                = Math.Clamp(_pendingOpacity / 100.0, 0.10, 1.0);
         ui.LargeTextMode          = _pendingLargeText;
         ui.Layout                 = _pendingLayout;
         ui.OverlayCaretPlacement  = _pendingOverlayCaretPlacement;

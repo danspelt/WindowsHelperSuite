@@ -30,6 +30,7 @@
         <SolidColorBrush x:Key="CardBackground" Color="#1E1F2A"/>
         <SolidColorBrush x:Key="CardHover" Color="#252636"/>
         <SolidColorBrush x:Key="AccentGreen" Color="#4ADE80"/>
+        <Color x:Key="AccentGreenColor">#FF4ADE80</Color>
         <SolidColorBrush x:Key="AccentGreenDim" Color="#2A5A3E"/>
         <SolidColorBrush x:Key="AccentBlue" Color="#60A5FA"/>
         <SolidColorBrush x:Key="TextPrimary" Color="#F0F0F5"/>
@@ -73,7 +74,7 @@
                                     SnapsToDevicePixels="True"
                                     Opacity="0">
                                 <Border.Effect>
-                                    <DropShadowEffect Color="{DynamicResource AccentGreen}" 
+                                    <DropShadowEffect Color="{DynamicResource AccentGreenColor}" 
                                                       BlurRadius="20" 
                                                       ShadowDepth="0" 
                                                       Opacity="0"/>

@@ -165,7 +165,14 @@ public class OverlayService : IOverlayService, IDisposable
     {
         EnsureWindowCreated();
         var pos = MapCaretPlacement();
-        RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, pos));
+        Rect? uiaBounds = null;
+        if (Win32Caret.TryGetTextInputBounds(out var b) && !b.IsEmpty)
+        {
+            uiaBounds = b;
+        }
+
+        var exclusion = BuildTextExclusionRect(x, y, uiaBounds);
+        RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, pos, exclusion));
     }
 
     private ScreenPosition MapCaretPlacement() =>
@@ -196,16 +203,16 @@ public class OverlayService : IOverlayService, IDisposable
         var pos = MapCaretPlacement();
         RunOnUiThread(() => _overlayWindow?.SetLayout(_layout));
 
-        // Try to get text field bounds for overlap avoidance
-        System.Windows.Rect? textFieldBounds = null;
+        Rect? uiaBounds = null;
         if (Win32Caret.TryGetTextInputBounds(out var bounds) && !bounds.IsEmpty)
         {
-            textFieldBounds = bounds;
+            uiaBounds = bounds;
         }
 
         if (Win32Caret.GetCaretPosition(out var x, out var y))
         {
-            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, pos, textFieldBounds));
+            var exclusion = BuildTextExclusionRect(x, y, uiaBounds);
+            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, pos, exclusion));
             if (x != _lastLogCaretX || y != _lastLogCaretY)
             {
                 _lastLogCaretX = x;
@@ -218,7 +225,8 @@ public class OverlayService : IOverlayService, IDisposable
             var screen = System.Windows.SystemParameters.WorkArea;
             var centerX = (int)(screen.Left + screen.Width / 2);
             var centerY = (int)(screen.Top + screen.Height / 2);
-            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(centerX, centerY, pos, textFieldBounds));
+            var exclusion = BuildTextExclusionRect(centerX, centerY, uiaBounds);
+            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(centerX, centerY, pos, exclusion));
             if (centerX != _lastLogCaretX || centerY != _lastLogCaretY)
             {
                 _lastLogCaretX = centerX;
@@ -227,6 +235,54 @@ public class OverlayService : IOverlayService, IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// Screen-space rectangle the overlay must not cover: UIA text field when available, else Win32 caret rect
+    /// inflated generously so Electron/multiline editors still get a safe zone.
+    /// </summary>
+    private static Rect BuildTextExclusionRect(int caretX, int caretY, Rect? uiaBounds)
+    {
+        Rect caretBase;
+        if (Win32Caret.TryGetCaretScreenRect(out var caretRc) && !caretRc.IsEmpty)
+        {
+            caretBase = caretRc;
+        }
+        else
+        {
+            caretBase = new Rect(caretX - 100, caretY - 28, 200, 32);
+        }
+
+        if (uiaBounds is { IsEmpty: false } u)
+        {
+            var uiaInflated = ExpandRectMargins(u, 6, 6, 6, 12);
+            var caretInflated = ExpandRectMargins(caretBase, 24, 32, 24, 20);
+            return UnionRects(uiaInflated, caretInflated);
+        }
+
+        return ExpandRectMargins(caretBase, 140, 180, 140, 96);
+    }
+
+    private static Rect UnionRects(Rect a, Rect b)
+    {
+        if (a.IsEmpty)
+        {
+            return b;
+        }
+
+        if (b.IsEmpty)
+        {
+            return a;
+        }
+
+        var x1 = Math.Min(a.Left, b.Left);
+        var y1 = Math.Min(a.Top, b.Top);
+        var x2 = Math.Max(a.Right, b.Right);
+        var y2 = Math.Max(a.Bottom, b.Bottom);
+        return new Rect(x1, y1, x2 - x1, y2 - y1);
+    }
+
+    private static Rect ExpandRectMargins(Rect r, double left, double top, double right, double bottom) =>
+        new(r.Left - left, r.Top - top, r.Width + left + right, r.Height + top + bottom);
 
     private void CalculatePages()
     {

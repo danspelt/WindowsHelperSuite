@@ -552,7 +552,11 @@ public partial class OverlayWindow : Window
         }
     }
 
-    public void PositionNearPoint(int caretX, int caretY, ScreenPosition preferredPosition, Rect? textFieldBounds = null)
+    /// <param name="textExclusionBounds">
+    /// Screen rectangle the overlay must not intersect (UIA text field union Win32 caret rect, inflated).
+    /// If null, a conservative fallback around the caret is used.
+    /// </param>
+    public void PositionNearPoint(int caretX, int caretY, ScreenPosition preferredPosition, Rect? textExclusionBounds = null)
     {
         UpdateLayout();
 
@@ -590,33 +594,45 @@ public partial class OverlayWindow : Window
         var windowWidth = measuredWidth > 0 ? measuredWidth : 600;
         var windowHeight = measuredHeight > 0 ? measuredHeight : 80;
 
-        // RULE: Never cover the caret or active input line
-        // Increased gaps to ensure the text line is never covered
-        const double gapBelow = 40;  // Was 24 — too small, text line is ~20-30px
-        const double gapAbove = 48;  // Was 80 — generous enough for above placement
+        var exclusion = ResolveExclusionBounds(caretX, caretY, textExclusionBounds);
+        var fieldBottom = exclusion.Bottom;
+        var fieldTop = exclusion.Top;
+
+        const double sideGap = 12;
+        const double placementGap = 8;
         double left = caretX;
         double top;
+        double besideL;
+        double besideT;
 
-        // If we have text field bounds, use them to calculate safe placement zones
-        var fieldBottom = textFieldBounds?.Bottom ?? (caretY + gapBelow);
-        var fieldTop = textFieldBounds?.Top ?? (caretY - gapAbove);
-        var fieldLeft = textFieldBounds?.Left ?? caretX;
-        var fieldRight = textFieldBounds?.Right ?? caretX;
+        // Space for overlay fully above/below the exclusion zone (including a small gap so WPF hit-tests don't "touch").
+        var spaceBelowField = screenBottom - (fieldBottom + placementGap);
+        var spaceAboveField = (fieldTop - placementGap) - screenTop;
 
-        // Space available below the text field (not just below the caret)
-        var spaceBelowField = screenBottom - fieldBottom;
-        // Space available above the text field
-        var spaceAboveField = fieldTop - screenTop;
-
-        if (preferredPosition == ScreenPosition.Above)
+        if (preferredPosition == ScreenPosition.Left)
+        {
+            left = exclusion.Left - windowWidth - sideGap;
+            top = exclusion.Top + (exclusion.Height - windowHeight) / 2;
+        }
+        else if (preferredPosition == ScreenPosition.Right)
+        {
+            left = exclusion.Right + sideGap;
+            top = exclusion.Top + (exclusion.Height - windowHeight) / 2;
+        }
+        else if (preferredPosition == ScreenPosition.Above)
         {
             if (spaceAboveField >= windowHeight)
             {
-                top = fieldTop - windowHeight;
+                top = fieldTop - windowHeight - placementGap;
             }
             else if (spaceBelowField >= windowHeight)
             {
-                top = fieldBottom;
+                top = fieldBottom + placementGap;
+            }
+            else if (TryDockBesideExclusion(exclusion, windowWidth, windowHeight, screenLeft, screenTop, screenRight, screenBottom, sideGap, out besideL, out besideT))
+            {
+                left = besideL;
+                top = besideT;
             }
             else
             {
@@ -627,11 +643,16 @@ public partial class OverlayWindow : Window
         {
             if (spaceBelowField >= windowHeight)
             {
-                top = fieldBottom;
+                top = fieldBottom + placementGap;
             }
             else if (spaceAboveField >= windowHeight)
             {
-                top = fieldTop - windowHeight;
+                top = fieldTop - windowHeight - placementGap;
+            }
+            else if (TryDockBesideExclusion(exclusion, windowWidth, windowHeight, screenLeft, screenTop, screenRight, screenBottom, sideGap, out besideL, out besideT))
+            {
+                left = besideL;
+                top = besideT;
             }
             else
             {
@@ -640,14 +661,36 @@ public partial class OverlayWindow : Window
         }
         else
         {
-            // Auto, Left, Right — prefer above then below
-            if (spaceAboveField >= windowHeight)
+            // Auto — pick the vertical side with more room when both fit (ties: below, typical for suggestions under typing).
+            var canPlaceAbove = spaceAboveField >= windowHeight;
+            var canPlaceBelow = spaceBelowField >= windowHeight;
+            if (canPlaceAbove && canPlaceBelow)
             {
-                top = fieldTop - windowHeight;
+                if (spaceBelowField > spaceAboveField + 24)
+                {
+                    top = fieldBottom + placementGap;
+                }
+                else if (spaceAboveField > spaceBelowField + 24)
+                {
+                    top = fieldTop - windowHeight - placementGap;
+                }
+                else
+                {
+                    top = fieldBottom + placementGap;
+                }
             }
-            else if (spaceBelowField >= windowHeight)
+            else if (canPlaceBelow)
             {
-                top = fieldBottom;
+                top = fieldBottom + placementGap;
+            }
+            else if (canPlaceAbove)
+            {
+                top = fieldTop - windowHeight - placementGap;
+            }
+            else if (TryDockBesideExclusion(exclusion, windowWidth, windowHeight, screenLeft, screenTop, screenRight, screenBottom, sideGap, out besideL, out besideT))
+            {
+                left = besideL;
+                top = besideT;
             }
             else
             {
@@ -655,40 +698,165 @@ public partial class OverlayWindow : Window
             }
         }
 
-        // Ensure window stays on the correct monitor work area horizontally and vertically
+        NudgeHorizontalClearOfExclusion(ref left, top, windowWidth, windowHeight, exclusion, screenLeft, screenRight, sideGap);
+
         left = Math.Max(screenLeft + 4, Math.Min(left, screenRight - windowWidth - 4));
         top = Math.Max(screenTop, Math.Min(top, screenBottom - windowHeight));
 
-        // Final overlap check: if the overlay still overlaps the text field, push it away
-        if (textFieldBounds is { } tfBounds)
-        {
-            var overlayRect = new Rect(left, top, windowWidth, windowHeight);
-            var textFieldRect = new Rect(tfBounds.Left, tfBounds.Top, tfBounds.Width, tfBounds.Height);
-
-            if (overlayRect.IntersectsWith(textFieldRect))
-            {
-                // Calculate how much we need to shift to clear the text field
-                var shiftBelow = tfBounds.Bottom - top;       // Shift down to get below field
-                var shiftAbove = (top + windowHeight) - tfBounds.Top; // Shift up to get above field
-
-                // Pick the smaller shift that stays on screen
-                var canShiftBelow = (top + shiftBelow + windowHeight) <= screenBottom;
-                var canShiftAbove = (top - shiftAbove) >= screenTop;
-
-                if (canShiftBelow && (!canShiftAbove || shiftBelow <= shiftAbove))
-                {
-                    top = tfBounds.Bottom;
-                }
-                else if (canShiftAbove)
-                {
-                    top = tfBounds.Top - windowHeight;
-                }
-                // If neither works, keep current position (edge case: field is larger than screen)
-            }
-        }
+        ResolveExclusionOverlap(ref left, ref top, windowWidth, windowHeight, exclusion, screenLeft, screenTop, screenRight, screenBottom);
 
         Left = left;
         Top = top;
+    }
+
+    /// <summary>Places the overlay entirely to the right or left of <paramref name="exclusion"/> when there is room.</summary>
+    private static bool TryDockBesideExclusion(
+        Rect exclusion,
+        double windowWidth,
+        double windowHeight,
+        double screenLeft,
+        double screenTop,
+        double screenRight,
+        double screenBottom,
+        double gap,
+        out double left,
+        out double top)
+    {
+        top = exclusion.Top + (exclusion.Height - windowHeight) / 2;
+        top = Math.Max(screenTop, Math.Min(top, screenBottom - windowHeight));
+
+        var rightDock = exclusion.Right + gap;
+        if (rightDock + windowWidth <= screenRight)
+        {
+            left = rightDock;
+            return true;
+        }
+
+        var leftDock = exclusion.Left - gap - windowWidth;
+        if (leftDock >= screenLeft)
+        {
+            left = leftDock;
+            return true;
+        }
+
+        left = 0;
+        return false;
+    }
+
+    /// <summary>When vertically placed, shift horizontally off <paramref name="exclusion"/> if the window still spans it in X.</summary>
+    private static void NudgeHorizontalClearOfExclusion(
+        ref double left,
+        double top,
+        double windowWidth,
+        double windowHeight,
+        Rect exclusion,
+        double screenLeft,
+        double screenRight,
+        double gap)
+    {
+        var r = new Rect(left, top, windowWidth, windowHeight);
+        if (!r.IntersectsWith(exclusion))
+        {
+            return;
+        }
+
+        var rightDock = exclusion.Right + gap;
+        if (rightDock + windowWidth <= screenRight)
+        {
+            left = rightDock;
+            return;
+        }
+
+        var leftDock = exclusion.Left - gap - windowWidth;
+        if (leftDock >= screenLeft)
+        {
+            left = leftDock;
+        }
+    }
+
+    private static Rect ResolveExclusionBounds(int caretX, int caretY, Rect? textExclusionBounds)
+    {
+        if (textExclusionBounds is { IsEmpty: false } r)
+        {
+            return r;
+        }
+
+        return new Rect(caretX - 240, caretY - 208, 480, 236);
+    }
+
+    private static void ResolveExclusionOverlap(
+        ref double left,
+        ref double top,
+        double windowWidth,
+        double windowHeight,
+        Rect exclusion,
+        double screenLeft,
+        double screenTop,
+        double screenRight,
+        double screenBottom)
+    {
+        const double gap = 10;
+
+        static bool Overlaps(double lx, double ty, double ww, double wh, Rect ex) =>
+            new Rect(lx, ty, ww, wh).IntersectsWith(ex);
+
+        if (!Overlaps(left, top, windowWidth, windowHeight, exclusion))
+        {
+            return;
+        }
+
+        var topBelow = exclusion.Bottom + gap;
+        if (topBelow + windowHeight <= screenBottom)
+        {
+            top = topBelow;
+        }
+
+        if (!Overlaps(left, top, windowWidth, windowHeight, exclusion))
+        {
+            return;
+        }
+
+        var topAbove = exclusion.Top - windowHeight - gap;
+        if (topAbove >= screenTop)
+        {
+            top = topAbove;
+        }
+
+        if (!Overlaps(left, top, windowWidth, windowHeight, exclusion))
+        {
+            return;
+        }
+
+        var centerY = exclusion.Top + (exclusion.Height - windowHeight) / 2;
+        centerY = Math.Max(screenTop, Math.Min(centerY, screenBottom - windowHeight));
+
+        var leftRight = exclusion.Right + gap;
+        if (leftRight + windowWidth <= screenRight)
+        {
+            left = leftRight;
+            top = centerY;
+        }
+
+        if (!Overlaps(left, top, windowWidth, windowHeight, exclusion))
+        {
+            return;
+        }
+
+        var leftLeft = exclusion.Left - windowWidth - gap;
+        if (leftLeft >= screenLeft)
+        {
+            left = leftLeft;
+            top = centerY;
+        }
+
+        // Do not clamp back into the exclusion zone: only apply work-area clamp if it keeps us clear.
+        var cl = Math.Max(screenLeft + 4, Math.Min(left, screenRight - windowWidth - 4));
+        var ct = Math.Max(screenTop, Math.Min(top, screenBottom - windowHeight));
+        if (!Overlaps(cl, ct, windowWidth, windowHeight, exclusion))
+        {
+            left = cl;
+            top = ct;
+        }
     }
 
     public void ApplyUiSettings(int fontSize, double opacity, bool largeTextMode,
@@ -699,7 +867,13 @@ public partial class OverlayWindow : Window
     {
         _overlayFadeTransitionMs = Math.Clamp(overlayFadeTransitionMs, 0, 600);
         var baseFontSize = largeTextMode ? Math.Max(fontSize * 1.5, 24) : Math.Max(fontSize, 19);
-        Opacity = Math.Clamp(opacity, 0.35, 1.0);
+        // Opacity setting drives *surface* alpha so the caret / host text field shows through the panel.
+        // Window stays at 1 so suggestion text and accents stay sharp (whole-window opacity mutes everything).
+        var userOp = Math.Clamp(opacity, 0.10, 1.0);
+        Opacity = 1.0;
+        var shellAlpha = userOp;
+        var cardAlpha = Math.Min(1.0, userOp + 0.28);
+        var borderAlpha = Math.Min(1.0, userOp + 0.12);
 
         var ff = new System.Windows.Media.FontFamily(
             string.IsNullOrWhiteSpace(fontFamily) ? "Segoe UI" : fontFamily);
@@ -708,10 +882,13 @@ public partial class OverlayWindow : Window
         ApplyColorResource("AccentGreen", accentColor);
         ApplyColorResource("AccentStripe", accentColor);
         ApplyColorResource("AccentGreenDim", DimColor(accentColor, 0.35));
-        ApplyColorResource("PrimaryBackground", bgColor);
-        ApplyColorResource("CardBackground", cardColor);
-        ApplyColorResource("SecondaryBackground", DimColor(cardColor, 0.72));
-        ApplyColorResource("CardHover", BlendWithWhite(cardColor, 0.08));
+        ApplyTranslucentPaint("PrimaryBackground", bgColor, shellAlpha);
+        ApplyTranslucentPaint("ContextBackground", "#16171F", shellAlpha);
+        ApplyTranslucentPaint("BorderColor", "#2A2B36", borderAlpha);
+        ApplyTranslucentPaint("BorderSubtle", "#222330", borderAlpha);
+        ApplyTranslucentPaint("CardBackground", cardColor, cardAlpha);
+        ApplyTranslucentPaint("SecondaryBackground", DimColor(cardColor, 0.72), cardAlpha);
+        ApplyTranslucentPaint("CardHover", BlendWithWhite(cardColor, 0.08), cardAlpha);
         ApplyColorResource("TextPrimary", textColor);
 
         FontFamily = ff;
@@ -767,6 +944,21 @@ public partial class OverlayWindow : Window
         {
             var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
             Resources[key] = new System.Windows.Media.SolidColorBrush(color);
+            Resources[$"{key}Color"] = color;
+        }
+        catch { }
+    }
+
+    /// <summary>RGB from <paramref name="hex"/> with A = round(255 × <paramref name="alpha01"/>).</summary>
+    private void ApplyTranslucentPaint(string key, string hex, double alpha01)
+    {
+        try
+        {
+            var parsed = (Color)ColorConverter.ConvertFromString(hex);
+            var a = (byte)Math.Round(255.0 * Math.Clamp(alpha01, 0.08, 1.0));
+            var color = Color.FromArgb(a, parsed.R, parsed.G, parsed.B);
+            Resources[key] = new SolidColorBrush(color);
+            Resources[$"{key}Color"] = color;
         }
         catch { }
     }

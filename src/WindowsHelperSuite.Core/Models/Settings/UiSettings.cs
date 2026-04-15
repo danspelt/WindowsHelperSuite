@@ -6,7 +6,8 @@ public class UiSettings
     public string FontFamily { get; set; } = "Segoe UI";
     public string FontWeight { get; set; } = "SemiBold";
     public bool HighContrast { get; set; } = false;
-    public double Opacity { get; set; } = 1.0;
+    /// <summary>Whole overlay window opacity (0–1). Lower values show more of the app behind the Writer overlay.</summary>
+    public double Opacity { get; set; } = 0.88;
     public string DockPosition { get; set; } = "BottomCenter";
     public bool LargeTextMode { get; set; } = false;
     public OverlayLayout Layout { get; set; } = OverlayLayout.Vertical;

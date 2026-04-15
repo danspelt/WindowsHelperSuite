@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Windows;
 using System.Windows.Automation;
 using System.Diagnostics;
 
@@ -116,6 +117,70 @@ public static class Win32Caret
         return false;
     }
 
+    /// <summary>
+    /// Caret bounding rectangle in screen coordinates from <see cref="GUITHREADINFO.rcCaret"/> (client rect of <see cref="GUITHREADINFO.hwndCaret"/>).
+    /// Used to build an exclusion zone when UI Automation does not return a text field box (e.g. Electron / Cursor).
+    /// </summary>
+    public static bool TryGetCaretScreenRect(out Rect rect)
+    {
+        rect = Rect.Empty;
+
+        try
+        {
+            var hwnd = GetForegroundWindow();
+            var threadId = GetWindowThreadProcessId(hwnd, out _);
+            var info = new GUITHREADINFO { cbSize = Marshal.SizeOf(typeof(GUITHREADINFO)) };
+
+            if (!GetGUIThreadInfo(threadId, out info) || info.hwndCaret == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            var rc = info.rcCaret;
+            var w = rc.Right - rc.Left;
+            var h = rc.Bottom - rc.Top;
+
+            if (w <= 0 && h <= 0)
+            {
+                // Degenerate: use caret line point as a thin strip (same idea as GetCaretPosition bottom).
+                var pt = new POINT { X = rc.Left, Y = rc.Bottom };
+                if (!ClientToScreen(info.hwndCaret, ref pt))
+                {
+                    return false;
+                }
+
+                rect = new Rect(pt.X - 1, pt.Y - 24, 2, 26);
+                return true;
+            }
+
+            if (w < 1)
+            {
+                w = 1;
+            }
+
+            if (h < 1)
+            {
+                h = 1;
+            }
+
+            var topLeft = new POINT { X = rc.Left, Y = rc.Top };
+            var bottomRight = new POINT { X = rc.Left + w, Y = rc.Top + h };
+            if (!ClientToScreen(info.hwndCaret, ref topLeft) || !ClientToScreen(info.hwndCaret, ref bottomRight))
+            {
+                return false;
+            }
+
+            var rw = Math.Max(1, bottomRight.X - topLeft.X);
+            var rh = Math.Max(1, bottomRight.Y - topLeft.Y);
+            rect = new Rect(topLeft.X, topLeft.Y, rw, rh);
+            return !rect.IsEmpty;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static bool HasActiveTextInput()
     {
         return GetCaretPosition(out var x, out var y) && (x != 0 || y != 0);
@@ -188,24 +253,83 @@ public static class Win32Caret
                 return false;
             }
 
-            if (!IsEditableTextInput(focusedElement))
+            if (IsEditableTextInput(focusedElement))
             {
-                return false;
+                var boundingRectangle = focusedElement.Current.BoundingRectangle;
+                if (boundingRectangle.IsEmpty || boundingRectangle.Width <= 0 || boundingRectangle.Height <= 0)
+                {
+                    return false;
+                }
+
+                bounds = boundingRectangle;
+                return true;
             }
 
-            var boundingRectangle = focusedElement.Current.BoundingRectangle;
-            if (boundingRectangle.IsEmpty || boundingRectangle.Width <= 0 || boundingRectangle.Height <= 0)
-            {
-                return false;
-            }
-
-            bounds = boundingRectangle;
-            return true;
+            // Electron / VS Code / Cursor: focus is often on a node that fails IsEditableTextInput (e.g. not keyboard-focusable).
+            return TryGetUiAutomationTextInputBoundsFromAncestors(focusedElement, out bounds);
         }
         catch
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Walks from <paramref name="start"/> (inclusive) up the UIA tree to find a Document or Edit with usable bounds.
+    /// </summary>
+    private static bool TryGetUiAutomationTextInputBoundsFromAncestors(AutomationElement start, out System.Windows.Rect bounds)
+    {
+        bounds = System.Windows.Rect.Empty;
+
+        try
+        {
+            var walker = TreeWalker.RawViewWalker;
+            AutomationElement? el = start;
+
+            for (var depth = 0; depth < 18 && el != null; depth++)
+            {
+                try
+                {
+                    var r = el.Current.BoundingRectangle;
+                    var ct = el.Current.ControlType;
+                    if (r.IsEmpty || r.Width < 48 || r.Height < 12)
+                    {
+                        el = walker.GetParent(el);
+                        continue;
+                    }
+
+                    if (ct == ControlType.Document)
+                    {
+                        bounds = r;
+                        return true;
+                    }
+
+                    if (ct == ControlType.Edit)
+                    {
+                        if (el.TryGetCurrentPattern(TextPattern.Pattern, out _) ||
+                            (el.TryGetCurrentPattern(ValuePattern.Pattern, out var vpObj) &&
+                             vpObj is ValuePattern vp &&
+                             !vp.Current.IsReadOnly))
+                        {
+                            bounds = r;
+                            return true;
+                        }
+                    }
+                }
+                catch
+                {
+                    break;
+                }
+
+                el = walker.GetParent(el);
+            }
+        }
+        catch
+        {
+            // ignore
+        }
+
+        return false;
     }
 
     private static bool IsEditableTextInput(AutomationElement element)
