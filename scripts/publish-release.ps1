@@ -21,6 +21,41 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $appProj = Join-Path $repoRoot "src\WindowsHelperSuite.App\WindowsHelperSuite.App.csproj"
 
+function Resolve-ISCCPath {
+    $cmd = Get-Command iscc -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Path -and (Test-Path -LiteralPath $cmd.Path)) {
+        return $cmd.Path
+    }
+
+    $regCandidates = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1",
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1"
+    )
+    foreach ($key in $regCandidates) {
+        try {
+            $loc = (Get-ItemProperty -Path $key -ErrorAction Stop).InstallLocation
+            if ($loc) {
+                $p = Join-Path $loc "ISCC.exe"
+                if (Test-Path -LiteralPath $p) { return $p }
+            }
+        } catch { }
+    }
+
+    $candidates = @(
+        (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+        (Join-Path ${env:ProgramFiles} "Inno Setup 6\ISCC.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 5\ISCC.exe"),
+        (Join-Path ${env:ProgramFiles} "Inno Setup 5\ISCC.exe")
+    ) | Where-Object { $_ -and $_.Trim() -ne "" } | Select-Object -Unique
+
+    foreach ($p in $candidates) {
+        if (Test-Path -LiteralPath $p) { return $p }
+    }
+
+    return $null
+}
+
 Push-Location $repoRoot
 try {
     Write-Host "Publishing Release (profile Win64SelfContained)..." -ForegroundColor Cyan
@@ -32,14 +67,14 @@ try {
     Write-Host "Output: $publishDir" -ForegroundColor Green
 
     if ($BuildInstaller) {
-        $iscc = Get-Command iscc -ErrorAction SilentlyContinue
-        if (-not $iscc) {
+        $isccPath = Resolve-ISCCPath
+        if (-not $isccPath) {
             Write-Warning "ISCC.exe not found on PATH. Install Inno Setup and add its folder to PATH, or compile installer\WindowsHelperSuite.iss manually."
             exit 0
         }
         $iss = Join-Path $repoRoot "installer\WindowsHelperSuite.iss"
         Write-Host "Compiling installer..." -ForegroundColor Cyan
-        & iscc $iss
+        & $isccPath $iss
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         Write-Host "Installer output: $(Join-Path $repoRoot 'artifacts\installer')" -ForegroundColor Green
     }

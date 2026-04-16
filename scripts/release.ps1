@@ -16,10 +16,17 @@
 .PARAMETER SkipStage
   Build only; do not create Releases\<version>\ or copy files there.
 
+.PARAMETER OpenInstaller
+  After building the installer, open it (starts the Inno Setup wizard).
+
+.PARAMETER OpenInstallerFolder
+  After building the installer, open the output folder in File Explorer.
+
 .EXAMPLE
   .\scripts\release.ps1 -Version 1.0.1
   .\scripts\release.ps1
   .\scripts\release.ps1 -Version 1.1.0 -Notes "- Fix tray focus`n- Update word bank defaults"
+  .\scripts\release.ps1 -OpenInstaller
 #>
 [CmdletBinding()]
 param(
@@ -31,10 +38,49 @@ param(
 
     [switch] $SkipInstaller,
 
-    [switch] $SkipStage
+    [switch] $SkipStage,
+
+    [switch] $OpenInstaller,
+
+    [switch] $OpenInstallerFolder
 )
 
 $ErrorActionPreference = "Stop"
+
+function Resolve-ISCCPath {
+    $cmd = Get-Command iscc -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Path -and (Test-Path -LiteralPath $cmd.Path)) {
+        return $cmd.Path
+    }
+
+    $regCandidates = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1",
+        "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Inno Setup 6_is1"
+    )
+    foreach ($key in $regCandidates) {
+        try {
+            $loc = (Get-ItemProperty -Path $key -ErrorAction Stop).InstallLocation
+            if ($loc) {
+                $p = Join-Path $loc "ISCC.exe"
+                if (Test-Path -LiteralPath $p) { return $p }
+            }
+        } catch { }
+    }
+
+    $candidates = @(
+        (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+        (Join-Path ${env:ProgramFiles} "Inno Setup 6\ISCC.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 5\ISCC.exe"),
+        (Join-Path ${env:ProgramFiles} "Inno Setup 5\ISCC.exe")
+    ) | Where-Object { $_ -and $_.Trim() -ne "" } | Select-Object -Unique
+
+    foreach ($p in $candidates) {
+        if (Test-Path -LiteralPath $p) { return $p }
+    }
+
+    return $null
+}
 
 function Get-FourPartAssemblyVersion([string] $semVer) {
     $parts = $semVer.Split('.')
@@ -97,20 +143,32 @@ try {
     Write-Host "Publish output: $publishDir" -ForegroundColor Green
 
     $setupExe = Join-Path $artifactsInstaller "WindowsHelperSuiteSetup-$releaseVersion.exe"
+    $setupExeStable = Join-Path $artifactsInstaller "WindowsHelperSuiteSetup.exe"
 
     if (-not $SkipInstaller) {
-        $iscc = Get-Command iscc -ErrorAction SilentlyContinue
-        if (-not $iscc) {
-            throw "ISCC.exe not on PATH. Install Inno Setup, add its folder to PATH, or use -SkipInstaller."
+        $isccPath = Resolve-ISCCPath
+        if (-not $isccPath) {
+            throw "ISCC.exe not found. Install Inno Setup, add ISCC.exe to PATH, or use -SkipInstaller."
         }
         $iss = Join-Path $repoRoot "installer\WindowsHelperSuite.iss"
         Write-Host "Compiling installer..." -ForegroundColor Cyan
-        & iscc $iss
+        & $isccPath $iss
         if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         if (-not (Test-Path -LiteralPath $setupExe)) {
             throw "Expected installer not found: $setupExe"
         }
         Write-Host "Installer: $setupExe" -ForegroundColor Green
+
+        Copy-Item -LiteralPath $setupExe -Destination $setupExeStable -Force
+        Write-Host "Installer (stable name): $setupExeStable" -ForegroundColor Green
+
+        if ($OpenInstallerFolder) {
+            Start-Process explorer.exe $artifactsInstaller | Out-Null
+        }
+
+        if ($OpenInstaller) {
+            Start-Process -FilePath $setupExe | Out-Null
+        }
     }
 
     if ($SkipStage) {

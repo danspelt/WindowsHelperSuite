@@ -153,6 +153,12 @@ public class ApplicationService : IDisposable
         _loggingService.Information("Application running");
     }
 
+    public void RequestShowSettings()
+    {
+        _loggingService.Information("Activation requested (show settings)");
+        _trayIconService.ShowSettings();
+    }
+
     /// <summary>
     /// Keyboard hook runs on a dedicated thread; overlay and prediction must run on the WPF dispatcher
     /// so we never block the hook with WPF/UIAutomation work (that caused crashes while typing).

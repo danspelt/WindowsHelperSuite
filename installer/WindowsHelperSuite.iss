@@ -19,7 +19,7 @@ AppId={#MyAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-AppPublisherURL=https://github.com/
+AppPublisherURL=https://github.com/Dans.minme/WindowsHelperSuite
 ; Per-user install (no elevation): same pattern as many modern desktop apps
 DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}

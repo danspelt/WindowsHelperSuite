@@ -29,6 +29,14 @@ Optional: `-Notes "..."` (multiline OK), `-SkipInstaller`, `-SkipStage` (build o
 
 The `Releases/` folder is gitignored (local bundles); keep changelog details in git via `docs/` or commit messages.
 
+## Which EXE do I run?
+
+- **To install**: run the installer from `artifacts/installer/` or `Releases/<version>/`:
+  - `WindowsHelperSuiteSetup-<version>.exe` (versioned), or
+  - `WindowsHelperSuiteSetup.exe` (stable convenience copy created by `release.ps1`)
+- **To run the app**: after installation, launch **Windows Helper Suite** from the Start Menu (or run the published app EXE for debugging):
+  - `.../publish/WindowsHelperSuite.exe` (this is the tray app; it is not an installer)
+
 ### Release checklist (manual)
 
 - [ ] Decide version; run `release.ps1 -Version x.y.z -Notes "…"`.

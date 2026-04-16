@@ -18,7 +18,7 @@ public partial class App : System.Windows.Application
         _singleInstanceService = new SingleInstanceService();
         if (!_singleInstanceService.IsFirstInstance())
         {
-            Console.WriteLine("WindowsHelperSuite is already running. Check the system tray for the existing instance.");
+            // Second launch: exit silently (tray app already running).
             Shutdown();
             return;
         }
