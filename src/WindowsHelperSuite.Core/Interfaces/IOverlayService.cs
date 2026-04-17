@@ -22,4 +22,13 @@ public interface IOverlayService
     event EventHandler<int>? SuggestionSelected;
     /// <summary>Fired when keyboard highlight moves to a suggestion; string is display text.</summary>
     event EventHandler<string?>? SuggestionHighlightChanged;
+
+    /// <summary>Temporarily suppress the writer (no overlay shown) for the given duration.</summary>
+    void SuppressFor(TimeSpan duration);
+    /// <summary>Clear any active suppression so the writer can appear again.</summary>
+    void ClearSuppression();
+    /// <summary>True if the writer is currently suppressed.</summary>
+    bool IsSuppressed { get; }
+    /// <summary>UTC timestamp until which the writer is suppressed (null = not suppressed).</summary>
+    DateTime? SuppressedUntilUtc { get; }
 }

@@ -14,6 +14,10 @@ public class TrayIconService : IDisposable
     private readonly Action _reloadHotkeys;
     private readonly Action? _openChat;
     private Window? _settingsWindow;
+    private ToolStripMenuItem? _reEnableWriterItem;
+
+    /// <summary>Overlay service reference used to offer "Re-enable Writer" when suppressed.</summary>
+    public IOverlayService? OverlayService { get; set; }
 
     public TrayIconService(ILoggingService loggingService, ISettingsService settingsService, Action reloadHotkeys, Action? openChat = null)
     {
@@ -38,17 +42,48 @@ public class TrayIconService : IDisposable
         var chatItem = new ToolStripMenuItem("AI Chat", null, (_, _) => _openChat?.Invoke());
         var settingsItem = new ToolStripMenuItem("Settings", null, OnSettingsClick);
         var wordsItem = new ToolStripMenuItem("Words & phrases…", null, (_, _) => ShowSettings(HotkeySettingsWindow.TabWordsPhrases));
+        _reEnableWriterItem = new ToolStripMenuItem("Re-enable Writer", null, OnReEnableWriterClick)
+        {
+            Visible = false
+        };
         var exitItem = new ToolStripMenuItem("Exit", null, OnExitClick);
 
         contextMenu.Items.Add(chatItem);
         contextMenu.Items.Add(new ToolStripSeparator());
+        contextMenu.Items.Add(_reEnableWriterItem);
         contextMenu.Items.Add(settingsItem);
         contextMenu.Items.Add(wordsItem);
         contextMenu.Items.Add(new ToolStripSeparator());
         contextMenu.Items.Add(exitItem);
 
+        contextMenu.Opening += (_, _) => RefreshSuppressionMenuItem();
+
         _notifyIcon.ContextMenuStrip = contextMenu;
         _notifyIcon.DoubleClick += OnSettingsClick;
+    }
+
+    private void RefreshSuppressionMenuItem()
+    {
+        if (_reEnableWriterItem == null) return;
+        var ov = OverlayService;
+        if (ov?.IsSuppressed == true && ov.SuppressedUntilUtc is DateTime until)
+        {
+            var remaining = until - DateTime.UtcNow;
+            if (remaining < TimeSpan.Zero) remaining = TimeSpan.Zero;
+            var mins = (int)Math.Ceiling(remaining.TotalMinutes);
+            _reEnableWriterItem.Text = $"Re-enable Writer ({mins} min left)";
+            _reEnableWriterItem.Visible = true;
+        }
+        else
+        {
+            _reEnableWriterItem.Visible = false;
+        }
+    }
+
+    private void OnReEnableWriterClick(object? sender, EventArgs e)
+    {
+        OverlayService?.ClearSuppression();
+        _loggingService.Information("Writer re-enabled via tray menu");
     }
 
     /// <summary>Tray text is limited to 63 characters on Windows.</summary>
