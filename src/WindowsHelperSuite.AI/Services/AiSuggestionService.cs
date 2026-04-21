@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using WindowsHelperSuite.AI.Models;
 using WindowsHelperSuite.Core.Interfaces;
 
@@ -12,6 +13,8 @@ namespace WindowsHelperSuite.AI.Services;
 /// </summary>
 public sealed class AiSuggestionService : IAiSuggestionService, IDisposable
 {
+    private static readonly Regex HorizontalWhitespaceRun = new("[ \\t\\u00A0]{2,}", RegexOptions.Compiled);
+
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -173,6 +176,8 @@ public sealed class AiSuggestionService : IAiSuggestionService, IDisposable
             {
                 break;
             }
+
+            line = HorizontalWhitespaceRun.Replace(line, " ");
 
             var isPhrase = line.Contains(' ', StringComparison.Ordinal);
             results.Add(new AiSuggestionResult

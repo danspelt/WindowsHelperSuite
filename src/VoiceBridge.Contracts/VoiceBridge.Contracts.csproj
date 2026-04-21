@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>VoiceBridge.Contracts</RootNamespace>
+    <Description>JSON-serializable message contracts for Voice Bridge (Pixel → Windows). Copy to the Android repo or share via submodule.</Description>
+  </PropertyGroup>
+
+</Project>

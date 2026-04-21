@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Threading;
@@ -26,12 +28,17 @@ using WindowsHelperSuite.Overlay.Services;
 using WindowsHelperSuite.Input.Services;
 using WindowsHelperSuite.Prediction.Services;
 using WindowsHelperSuite.Speech.Services;
+using VoiceBridge.Contracts;
 using WindowsHelperSuite.Writer.Llm;
+using WindowsHelperSuite.VoiceBridge;
 
 namespace WindowsHelperSuite.App.Services;
 
 public class ApplicationService : IDisposable
 {
+    /// <summary>Collapses runs of spaces/tabs/NBSP that models often emit (e.g. after a word).</summary>
+    private static readonly Regex HorizontalWhitespaceRun = new("[ \\t\\u00A0]{2,}", RegexOptions.Compiled);
+
     private readonly ISettingsService _settingsService;
     private readonly ILoggingService _loggingService;
     private readonly TrayIconService _trayIconService;
@@ -52,6 +59,9 @@ public class ApplicationService : IDisposable
     private int _focusLostCount = 0; // Require multiple failed checks before hiding
     private SpeakMode _speakMode = SpeakMode.Both;
     private readonly object _writerStateLock = new();
+    // Writer starts asleep — must be woken with the user-configured WakeWriter hotkey.
+    // Overlay dismiss (Esc / explicit) puts it back to sleep.
+    private volatile bool _writerAwake = false;
     private readonly IAiVocabularyGateService _aiVocabGate;
     private readonly ConcurrentDictionary<string, Task<bool>> _vocabGateTasks = new(StringComparer.OrdinalIgnoreCase);
     private readonly IWriterVocabularyRemoteStore _remoteVocabulary;
@@ -61,6 +71,7 @@ public class ApplicationService : IDisposable
     private readonly ChatOptions _chatOptions;
     private ChatWindow? _chatWindow;
     private CancellationTokenSource? _highlightSpeechCts;
+    private VoiceBridgeListener? _voiceBridgeListener;
 
     public ApplicationService(
         IWriterContext? writerContext = null,
@@ -71,6 +82,7 @@ public class ApplicationService : IDisposable
         _settingsService = new SettingsService();
         _settingsService.Load();
         _settingsService.Settings.MongoVocabulary ??= new MongoVocabularySettings();
+        _settingsService.Settings.VoiceBridge ??= new VoiceBridgeSettings();
 
         _remoteVocabulary = WriterVocabularyMongoStore.Create(_settingsService.Settings.MongoVocabulary, _loggingService);
         if (_remoteVocabulary.IsEnabled)
@@ -145,7 +157,46 @@ public class ApplicationService : IDisposable
         _inputService.Start();
         _hotkeyService.Start();
 
+        TryStartVoiceBridgeListener();
+
         _loggingService.Information("Application started (v4 - enhanced injection + key suppression)");
+    }
+
+    private void TryStartVoiceBridgeListener()
+    {
+        var vb = _settingsService.Settings.VoiceBridge;
+        if (!vb.EnableListener)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(vb.SharedToken))
+        {
+            vb.SharedToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
+            _settingsService.Save();
+            _loggingService.Information(
+                "Voice Bridge: generated voiceBridge.sharedToken in settings.json — use it as the WebSocket query token on the phone.");
+        }
+
+        _voiceBridgeListener = new VoiceBridgeListener(_loggingService, () =>
+        {
+            var s = _settingsService.Settings.VoiceBridge;
+            return new VoiceBridgeConnectionOptions
+            {
+                Enabled = s.EnableListener,
+                Port = Math.Clamp(s.ListenPort, 1024, 65535),
+                ListenOnAllInterfaces = s.ListenOnAllInterfaces,
+                SharedToken = s.SharedToken
+            };
+        });
+        _voiceBridgeListener.MessageReceived += OnVoiceBridgeMessageReceived;
+        _voiceBridgeListener.Start();
+    }
+
+    private void OnVoiceBridgeMessageReceived(VoiceBridgeEnvelope env)
+    {
+        _loggingService.Debug(
+            $"Voice Bridge message: type={env.Type} session={env.SessionId} textLen={env.Text?.Length ?? 0}");
     }
 
     public void Run()
@@ -195,10 +246,15 @@ public class ApplicationService : IDisposable
 
     private void WireInputToOverlay()
     {
-        _inputService.TypingStarted += (_, _) => DeferWriterUi(ShowOverlay);
+        _inputService.TypingStarted += (_, _) =>
+        {
+            if (!_writerAwake) return;
+            DeferWriterUi(ShowOverlay);
+        };
 
         _inputService.TextCaptured += (_, text) =>
         {
+            if (!_writerAwake) return;
             try
             {
                 _speechService.NotifyKeystroke();
@@ -213,6 +269,7 @@ public class ApplicationService : IDisposable
 
         _inputService.WordTyped += (_, e) =>
         {
+            if (!_writerAwake) return;
             try
             {
                 var finalWord = ApplyWordCapitalizationInjectionIfNeeded(e);
@@ -232,7 +289,11 @@ public class ApplicationService : IDisposable
         };
 
         _inputService.PasteIntercept += OnPasteIntercept;
-        _inputService.SentenceTyped += (_, sentence) => DeferWriterUi(() => OnSentenceTyped(sentence));
+        _inputService.SentenceTyped += (_, sentence) =>
+        {
+            if (!_writerAwake) return;
+            DeferWriterUi(() => OnSentenceTyped(sentence));
+        };
         _inputService.OverlayDismissRequested += (_, _) => DeferWriterUi(() =>
         {
             _speechService.Stop();
@@ -246,7 +307,9 @@ public class ApplicationService : IDisposable
             _hasValidTextInput = false;
             _previousWord = string.Empty;
             _recentWords.Clear();
-            _loggingService.Debug("Overlay hidden - explicit dismissal requested");
+            // Return writer to sleep — must be woken again with the wake-up hotkey.
+            _writerAwake = false;
+            _loggingService.Debug("Overlay hidden - explicit dismissal requested (writer sleeping)");
         });
 
         _inputService.TypingStopped += (_, _) => DeferWriterUi(() =>
@@ -316,8 +379,9 @@ public class ApplicationService : IDisposable
                         Thread.Sleep(30);
                     }
 
-                    Win32TextInjection.SendText(textToInsert + " ");
-                    _inputService.ApplySuggestionInsertion(charsToDelete, textToInsert + " ");
+                    var insertWithSpace = NormalizeSuggestionInsertText(rawBeforePartial, textToInsert) + " ";
+                    Win32TextInjection.SendText(insertWithSpace);
+                    _inputService.ApplySuggestionInsertion(charsToDelete, insertWithSpace);
                     LearnAcceptedSuggestion(acceptedText, typedPartial, suggestionKind, charsToDelete);
                     _loggingService.Information($"Inserted: {acceptedText}");
 
@@ -794,7 +858,7 @@ public class ApplicationService : IDisposable
                 break;
             }
 
-            var t = r.Text.Trim();
+            var t = SanitizeOverlaySuggestionText(r.Text);
             if (t.Length == 0 || t.Length > 120)
             {
                 continue;
@@ -922,8 +986,9 @@ public class ApplicationService : IDisposable
                 Win32TextInjection.SendBackspace(charsToDelete);
             }
 
-            Win32TextInjection.SendText(textToInsert + " ");
-            _inputService.ApplySuggestionInsertion(charsToDelete, textToInsert + " ");
+            var insertWithSpace = NormalizeSuggestionInsertText(rawBeforePartial, textToInsert) + " ";
+            Win32TextInjection.SendText(insertWithSpace);
+            _inputService.ApplySuggestionInsertion(charsToDelete, insertWithSpace);
             LearnAcceptedSuggestion(acceptedText, typedPartial, suggestion.Kind, charsToDelete);
             _loggingService.Information($"Inserted: {acceptedText}");
             UpdateSuggestions(string.Empty);
@@ -1016,6 +1081,26 @@ public class ApplicationService : IDisposable
             _loggingService.Information($"Writer {(_inputService.IsEnabled ? "enabled" : "paused")}");
         });
 
+        _hotkeyService.RegisterAction("WakeWriter", () =>
+        {
+            DeferWriterUi(() =>
+            {
+                if (_writerAwake)
+                {
+                    _loggingService.Debug("WakeWriter pressed but writer already awake — ignored");
+                    return;
+                }
+
+                _writerAwake = true;
+                _loggingService.Information("Writer woken via hotkey — overlay active");
+                // Only show the overlay if the user is currently in a text field.
+                if (Win32Caret.GetCaretPosition(out var x, out var y) && (x != 0 || y != 0))
+                {
+                    ShowOverlay();
+                }
+            });
+        });
+
         _hotkeyService.RegisterAction("AddToWordBank", () =>
         {
             AddCurrentTypingToWordBank();
@@ -1067,6 +1152,7 @@ public class ApplicationService : IDisposable
             _hotkeyService.RegisterHotkey("WriterRefresh", "`");
             _hotkeyService.RegisterHotkey("ToggleOverlay", "Ctrl+Shift+O");
             _hotkeyService.RegisterHotkey("PauseWriter", "Ctrl+Shift+P");
+            _hotkeyService.RegisterHotkey("WakeWriter", "Ctrl+Shift+W");
             _hotkeyService.RegisterHotkey("AddToWordBank", "Ctrl+`");
             _hotkeyService.RegisterHotkey("AddPhraseToWordBank", "Ctrl+Shift+`");
             _hotkeyService.RegisterHotkey("FixClipboardCapitalization", "Ctrl+Shift+C");
@@ -1103,13 +1189,22 @@ public class ApplicationService : IDisposable
             {
                 _hotkeyService.RegisterHotkey("OpenStillSpace", "Ctrl+F4", true);
             }
+
+            // Ensure WakeWriter always has a binding — the writer now sleeps by default and MUST be woken.
+            var wakeDef = settings.FirstOrDefault(b =>
+                string.Equals(b.ActionName, "WakeWriter", StringComparison.OrdinalIgnoreCase));
+            if (wakeDef == null || string.IsNullOrWhiteSpace(wakeDef.Gesture) || !wakeDef.Enabled)
+            {
+                _hotkeyService.RegisterHotkey("WakeWriter", "Ctrl+Shift+W");
+                _loggingService.Information("WakeWriter bound to default Ctrl+Shift+W (no user binding found)");
+            }
         }
     }
 
     private static readonly string[] AllHotkeyActionNames =
     [
         "VolumeUp", "VolumeDown", "VolumeMute", "WriterRefresh",
-        "ToggleOverlay", "PauseWriter", "AddToWordBank", "AddPhraseToWordBank",
+        "ToggleOverlay", "PauseWriter", "WakeWriter", "AddToWordBank", "AddPhraseToWordBank",
         "FixClipboardCapitalization", "OpenModeMenu", "OpenSettings", "OpenStillSpace",
     ];
 
@@ -1193,22 +1288,60 @@ public class ApplicationService : IDisposable
     {
         if (suggestion.Kind != SuggestionKind.PhraseCompletion || string.IsNullOrWhiteSpace(suggestion.InsertText))
         {
-            return acceptedText;
+            return acceptedText.TrimEnd();
         }
 
         var remainder = suggestion.InsertText.TrimStart();
         if (string.IsNullOrWhiteSpace(remainder))
         {
-            return acceptedText;
+            return acceptedText.TrimEnd();
         }
 
         var startIndex = suggestion.DisplayText.IndexOf(remainder, StringComparison.OrdinalIgnoreCase);
         if (startIndex >= 0 && startIndex < acceptedText.Length)
         {
-            return acceptedText[startIndex..].TrimStart();
+            return acceptedText[startIndex..].TrimStart().TrimEnd();
         }
 
-        return remainder;
+        return remainder.TrimEnd();
+    }
+
+    /// <summary>
+    /// Collapses horizontal whitespace runs, trims trailing space, then avoids a doubled gap when the
+    /// caret prefix already ends with whitespace and the fragment starts with whitespace (model continuations).
+    /// </summary>
+    private static string NormalizeSuggestionInsertText(string? rawTextBeforeCaret, string textToInsert)
+    {
+        if (string.IsNullOrWhiteSpace(textToInsert))
+        {
+            return string.Empty;
+        }
+
+        var t = HorizontalWhitespaceRun.Replace(textToInsert.TrimEnd(), " ");
+        if (t.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        if (!string.IsNullOrEmpty(rawTextBeforeCaret)
+            && char.IsWhiteSpace(rawTextBeforeCaret[^1])
+            && char.IsWhiteSpace(t[0]))
+        {
+            t = t.TrimStart();
+        }
+
+        return t;
+    }
+
+    private static string SanitizeOverlaySuggestionText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        var s = text.Trim();
+        return HorizontalWhitespaceRun.Replace(s, " ");
     }
 
     private void OnPasteIntercept(object? sender, PasteInterceptEventArgs e)
@@ -1678,6 +1811,13 @@ public class ApplicationService : IDisposable
 
     public void Dispose()
     {
+        if (_voiceBridgeListener != null)
+        {
+            _voiceBridgeListener.MessageReceived -= OnVoiceBridgeMessageReceived;
+            _voiceBridgeListener.Dispose();
+            _voiceBridgeListener = null;
+        }
+
         _overlayAiDebounceCts?.Cancel();
         _overlayAiDebounceCts?.Dispose();
         _overlayAiDebounceCts = null;

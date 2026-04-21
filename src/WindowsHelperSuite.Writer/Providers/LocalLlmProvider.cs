@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using WindowsHelperSuite.Writer.Abstractions;
 using WindowsHelperSuite.Writer.Llm;
 using WindowsHelperSuite.Writer.Models;
@@ -6,6 +7,8 @@ namespace WindowsHelperSuite.Writer.Providers;
 
 public sealed class LocalLlmProvider : IPredictionProvider
 {
+    private static readonly Regex HorizontalWhitespaceRun = new("[ \\t\\u00A0]{2,}", RegexOptions.Compiled);
+
     private readonly LocalLlmClient _client;
     private readonly LocalLlmOptions _options;
 
@@ -44,7 +47,7 @@ public sealed class LocalLlmProvider : IPredictionProvider
 
             var max = Math.Clamp(_options.MaxSuggestions, 1, 8);
             return raw.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-                .Select(x => x.Trim().TrimStart('-', '•', ' ', '"'))
+                .Select(x => HorizontalWhitespaceRun.Replace(x.Trim().TrimStart('-', '•', ' ', '"'), " "))
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Take(max)

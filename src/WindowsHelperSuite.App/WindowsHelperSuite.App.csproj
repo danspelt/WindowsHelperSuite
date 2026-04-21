@@ -11,6 +11,7 @@
     <ProjectReference Include="..\WindowsHelperSuite.Speech\WindowsHelperSuite.Speech.csproj" />
     <ProjectReference Include="..\WindowsHelperSuite.Hotkeys\WindowsHelperSuite.Hotkeys.csproj" />
     <ProjectReference Include="..\WindowsHelperSuite.Settings\WindowsHelperSuite.Settings.csproj" />
+    <ProjectReference Include="..\WindowsHelperSuite.VoiceBridge\WindowsHelperSuite.VoiceBridge.csproj" />
   </ItemGroup>
 
   <ItemGroup>

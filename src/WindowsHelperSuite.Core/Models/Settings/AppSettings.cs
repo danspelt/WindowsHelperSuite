@@ -12,4 +12,6 @@ public class AppSettings
     public QuickTextSettings QuickText { get; set; } = new();
 
     public MongoVocabularySettings MongoVocabulary { get; set; } = new();
+
+    public VoiceBridgeSettings VoiceBridge { get; set; } = new();
 }

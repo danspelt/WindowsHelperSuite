@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>WindowsHelperSuite.VoiceBridge</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\VoiceBridge.Contracts\VoiceBridge.Contracts.csproj" />
+    <ProjectReference Include="..\WindowsHelperSuite.Core\WindowsHelperSuite.Core.csproj" />
+  </ItemGroup>
+
+</Project>

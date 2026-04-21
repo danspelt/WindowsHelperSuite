@@ -51,13 +51,22 @@ public static class CapitalizationService
     /// </summary>
     public static string FixInsertion(string? rawTextBeforeCaret, string fragment, WriterCapitalizationOptions options)
     {
-        if (!options.Enabled || string.IsNullOrEmpty(fragment))
+        if (string.IsNullOrEmpty(fragment))
         {
             return fragment;
         }
 
+        if (!options.Enabled)
+        {
+            return fragment.TrimEnd();
+        }
+
         var trimmedEnd = fragment.TrimEnd();
         var trailing = fragment.Length > trimmedEnd.Length ? fragment[trimmedEnd.Length..] : "";
+        if (string.IsNullOrWhiteSpace(trailing))
+        {
+            trailing = "";
+        }
 
         var firstSpace = trimmedEnd.IndexOf(' ');
         if (firstSpace < 0)
