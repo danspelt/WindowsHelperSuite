@@ -104,6 +104,7 @@ public class ApplicationService : IDisposable
         _trayIconService = new TrayIconService(_loggingService, _settingsService, ReloadHotkeys, OpenChat);
         _hotkeyService = new HotkeyService(_loggingService);
         _overlayService = new OverlayService(_loggingService, _settingsService);
+        _trayIconService.OverlayService = _overlayService;
         _inputService = new InputService(
             _loggingService,
             new CachingSecretFieldDetector(new SecretFieldDetector()),

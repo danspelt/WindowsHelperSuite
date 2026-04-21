@@ -37,6 +37,8 @@ public partial class OverlayWindow : Window
     public event EventHandler? PreviousPageRequested;
     /// <summary>Display text of the suggestion now keyboard-highlighted.</summary>
     public event EventHandler<string?>? SuggestionHighlightChanged;
+    /// <summary>Raised when the user clicks the close button to dismiss the overlay.</summary>
+    public event EventHandler? CloseRequested;
 
     public OverlayWindow()
     {
@@ -922,6 +924,36 @@ public partial class OverlayWindow : Window
         ContextLabel.FontFamily = ff;
         PagingIndicator.FontSize = Math.Max(baseFontSize - 6, 11);
         SpeakerIndicator.FontSize = Math.Max(baseFontSize - 6, 11);
+    }
+
+    // ── Hover-reveal close button ──
+    private void OverlayRoot_MouseEnter(object sender, MouseEventArgs e)
+    {
+        FadeCloseButton(1.0, 140);
+    }
+
+    private void OverlayRoot_MouseLeave(object sender, MouseEventArgs e)
+    {
+        FadeCloseButton(0.0, 220);
+    }
+
+    private void FadeCloseButton(double targetOpacity, int durationMs)
+    {
+        if (CloseButton == null)
+            return;
+
+        var animation = new DoubleAnimation
+        {
+            To = targetOpacity,
+            Duration = new Duration(TimeSpan.FromMilliseconds(durationMs)),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+        };
+        CloseButton.BeginAnimation(OpacityProperty, animation);
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e)
+    {
+        CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
     private static FontWeight ParseFontWeight(string? weight) => (weight?.Trim().ToLowerInvariant()) switch

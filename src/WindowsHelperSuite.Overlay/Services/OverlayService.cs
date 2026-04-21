@@ -26,6 +26,32 @@ public class OverlayService : IOverlayService, IDisposable
     public event EventHandler<int>? SuggestionSelected;
     public event EventHandler<string?>? SuggestionHighlightChanged;
 
+    // ── Writer suppression (close-button disables writer for a period) ──
+    private DateTime? _suppressedUntilUtc;
+    public bool IsSuppressed => _suppressedUntilUtc.HasValue && DateTime.UtcNow < _suppressedUntilUtc.Value;
+    public DateTime? SuppressedUntilUtc => _suppressedUntilUtc;
+
+    public void SuppressFor(TimeSpan duration)
+    {
+        if (duration <= TimeSpan.Zero)
+        {
+            ClearSuppression();
+            return;
+        }
+        _suppressedUntilUtc = DateTime.UtcNow + duration;
+        _loggingService.Information($"Writer suppressed until {_suppressedUntilUtc:HH:mm:ss} UTC (for {duration.TotalMinutes:F0} min)");
+        HideSuggestions();
+    }
+
+    public void ClearSuppression()
+    {
+        if (_suppressedUntilUtc.HasValue)
+        {
+            _loggingService.Information("Writer suppression cleared");
+        }
+        _suppressedUntilUtc = null;
+    }
+
     public OverlayService(ILoggingService loggingService, ISettingsService settingsService)
     {
         _loggingService = loggingService;
@@ -36,6 +62,12 @@ public class OverlayService : IOverlayService, IDisposable
 
     public void ShowSuggestions(IReadOnlyList<SuggestionItem> suggestions)
     {
+        // If the writer is suppressed (user closed it via X button), don't show anything.
+        if (IsSuppressed)
+        {
+            return;
+        }
+
         _allSuggestions = suggestions.ToList();
         _currentPage = 0;
         CalculatePages();
@@ -356,6 +388,11 @@ public class OverlayService : IOverlayService, IDisposable
                 _overlayWindow.SuggestionHighlightChanged += OnSuggestionHighlightChanged;
                 _overlayWindow.NextPageRequested += (s, e) => MoveToNextPage();
                 _overlayWindow.PreviousPageRequested += (s, e) => MoveToPreviousPage();
+                _overlayWindow.CloseRequested += (s, e) =>
+                {
+                    _loggingService.Information("Overlay closed via close button — suppressing writer for 1 hour");
+                    SuppressFor(TimeSpan.FromHours(1));
+                };
             });
         }
     }

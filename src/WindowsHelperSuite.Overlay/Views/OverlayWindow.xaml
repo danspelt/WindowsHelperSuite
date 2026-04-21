@@ -133,7 +133,9 @@
                             Direction="270"/>
         </Border.Effect>
 
-        <Grid>
+        <Grid x:Name="OverlayRootGrid"
+              MouseEnter="OverlayRoot_MouseEnter"
+              MouseLeave="OverlayRoot_MouseLeave">
             <!-- Main overlay border + inner glass edge -->
             <Border x:Name="OverlayBorder"
                     Background="{DynamicResource PrimaryBackground}"
@@ -275,6 +277,50 @@
                     </Border>
                 </Grid>
             </Border>
+
+            <!-- Close button — hover-reveal, top-right corner -->
+            <Button x:Name="CloseButton"
+                    Click="CloseButton_Click"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Width="32"
+                    Height="32"
+                    Margin="0,2,2,0"
+                    Cursor="Hand"
+                    Focusable="False"
+                    ToolTip="Close (Esc)"
+                    Opacity="0">
+                <Button.RenderTransform>
+                    <TranslateTransform/>
+                </Button.RenderTransform>
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Ellipse x:Name="bg"
+                                     Fill="#E11D48"
+                                     Stroke="#FFFFFF"
+                                     StrokeThickness="1.5"
+                                     Opacity="0.92"/>
+                            <Ellipse Fill="Transparent"
+                                     Width="18" Height="18"/>
+                            <TextBlock Text="&#x2715;"
+                                       FontSize="15"
+                                       FontWeight="Bold"
+                                       Foreground="White"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bg" Property="Fill" Value="#FB7185"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bg" Property="Fill" Value="#BE123C"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
         </Grid>
     </Border>
 </Window>
