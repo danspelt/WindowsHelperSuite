@@ -77,11 +77,17 @@ internal sealed class WindowsLiveSpeechEngine : ILiveSpeechService
         }
         catch (Exception ex)
         {
-            var msg = ex.Message;
-            if (msg.Contains("privacy", StringComparison.OrdinalIgnoreCase) ||
-                msg.Contains("permission", StringComparison.OrdinalIgnoreCase) ||
-                msg.Contains("access", StringComparison.OrdinalIgnoreCase) ||
-                msg.Contains("denied", StringComparison.OrdinalIgnoreCase))
+            var msg = CleanWinRtMessage(ex.Message);
+
+            if (msg.Contains("speech privacy policy", StringComparison.OrdinalIgnoreCase))
+            {
+                msg +=
+                    " Turn on Settings → Privacy & security → Speech → “Online speech recognition” (this also accepts the speech privacy policy).";
+            }
+            else if (msg.Contains("privacy", StringComparison.OrdinalIgnoreCase) ||
+                     msg.Contains("permission", StringComparison.OrdinalIgnoreCase) ||
+                     msg.Contains("access", StringComparison.OrdinalIgnoreCase) ||
+                     msg.Contains("denied", StringComparison.OrdinalIgnoreCase))
             {
                 msg +=
                     " Enable the microphone for desktop apps: Settings → Privacy & security → Microphone (Microphone access and “Let desktop apps access your microphone”). "
@@ -92,6 +98,29 @@ internal sealed class WindowsLiveSpeechEngine : ILiveSpeechService
             ErrorOccurred?.Invoke(this, msg);
             await StopAsync(cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// WinRT exceptions wrapped by the CLR often carry a noise prefix like
+    /// "The text associated with this error code could not be found." when the HRESULT
+    /// has no friendly resource. Strip it so the real, actionable reason is shown first.
+    /// </summary>
+    private static string CleanWinRtMessage(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return raw ?? string.Empty;
+
+        const string noise = "The text associated with this error code could not be found.";
+        var trimmed = raw.Replace(noise, string.Empty, StringComparison.OrdinalIgnoreCase).Trim();
+        // Collapse the blank line(s) the removal typically leaves behind.
+        while (trimmed.Contains("\r\n\r\n", StringComparison.Ordinal))
+        {
+            trimmed = trimmed.Replace("\r\n\r\n", "\r\n", StringComparison.Ordinal);
+        }
+        while (trimmed.Contains("\n\n", StringComparison.Ordinal))
+        {
+            trimmed = trimmed.Replace("\n\n", "\n", StringComparison.Ordinal);
+        }
+        return string.IsNullOrWhiteSpace(trimmed) ? raw : trimmed;
     }
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
@@ -132,8 +161,15 @@ internal sealed class WindowsLiveSpeechEngine : ILiveSpeechService
         finally
         {
             try { rec.Dispose(); } catch { /* ignore */ }
+            var wasListening = IsListening;
             IsListening = false;
-            ListeningStateChanged?.Invoke(this, false);
+            // Avoid broadcasting a spurious state change if Start threw before
+            // the session ever transitioned to listening; the view model would
+            // otherwise overwrite the error status with "Stopped".
+            if (wasListening)
+            {
+                ListeningStateChanged?.Invoke(this, false);
+            }
             _log?.Debug("Live Captions (WinRT) stopped");
         }
     }

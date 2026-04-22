@@ -4,14 +4,16 @@ using WindowsHelperSuite.Core.Models.Settings;
 namespace WindowsHelperSuite.Speech.LiveCaptions;
 
 /// <summary>
-/// Live captions engine router: prefers Azure (when key+region are configured),
-/// otherwise falls back to the built-in Windows WinRT recognizer.
-/// Consumers only see a single <see cref="ILiveSpeechService"/> surface.
+/// Live captions engine router: prefers OpenAI Whisper (when API key is configured),
+/// then Azure (when key+region are configured), otherwise falls back to the built-in
+/// Windows WinRT recognizer. Consumers only see a single <see cref="ILiveSpeechService"/> surface.
 /// </summary>
 public sealed class CompositeLiveSpeechService : ILiveSpeechService, IDisposable
 {
     private readonly Func<SpeechSettings> _getSettings;
+    private readonly Func<LiveCaptionSettings> _getLiveCaptionSettings;
     private readonly ILoggingService? _log;
+    private readonly OpenAiWhisperLiveSpeechEngine _whisper;
     private readonly AzureLiveSpeechEngine _azure;
     private readonly WindowsLiveSpeechEngine _windows;
     private ILiveSpeechService? _active;
@@ -24,10 +26,15 @@ public sealed class CompositeLiveSpeechService : ILiveSpeechService, IDisposable
     public string ActiveEngineName => _active?.ActiveEngineName ?? ResolveEnginePreview();
     public bool IsListening => _active?.IsListening ?? false;
 
-    public CompositeLiveSpeechService(Func<SpeechSettings> getSettings, ILoggingService? log = null)
+    public CompositeLiveSpeechService(
+        Func<SpeechSettings> getSettings,
+        Func<LiveCaptionSettings> getLiveCaptionSettings,
+        ILoggingService? log = null)
     {
         _getSettings = getSettings ?? throw new ArgumentNullException(nameof(getSettings));
+        _getLiveCaptionSettings = getLiveCaptionSettings ?? throw new ArgumentNullException(nameof(getLiveCaptionSettings));
         _log = log;
+        _whisper = new OpenAiWhisperLiveSpeechEngine(getLiveCaptionSettings, log);
         _azure = new AzureLiveSpeechEngine(getSettings, log);
         _windows = new WindowsLiveSpeechEngine(log);
     }
@@ -62,6 +69,12 @@ public sealed class CompositeLiveSpeechService : ILiveSpeechService, IDisposable
 
     private ILiveSpeechService ChooseEngine()
     {
+        // Prefer Whisper (best for diverse speech patterns including cerebral palsy)
+        if (_whisper.IsConfigured())
+        {
+            return _whisper;
+        }
+
         if (_azure.IsConfigured())
         {
             return _azure;
@@ -72,17 +85,19 @@ public sealed class CompositeLiveSpeechService : ILiveSpeechService, IDisposable
             return _windows;
         }
 
-        // Fall back to Azure anyway so it can emit a clear "not configured" error.
-        return _azure;
+        // Fall back to Whisper anyway so it can emit a clear "not configured" error.
+        return _whisper;
     }
 
     private string ResolveEnginePreview()
     {
-        return _azure.IsConfigured()
-            ? "Azure Neural (preview)"
-            : WindowsLiveSpeechEngine.IsSupported
-                ? "Windows WinRT (preview)"
-                : "Unavailable";
+        return _whisper.IsConfigured()
+            ? "OpenAI Whisper (preview)"
+            : _azure.IsConfigured()
+                ? "Azure Neural (preview)"
+                : WindowsLiveSpeechEngine.IsSupported
+                    ? "Windows WinRT (preview)"
+                    : "Unavailable";
     }
 
     private void Wire(ILiveSpeechService engine)
@@ -109,6 +124,7 @@ public sealed class CompositeLiveSpeechService : ILiveSpeechService, IDisposable
     public void Dispose()
     {
         try { _ = StopAsync(); } catch { /* ignore */ }
+        _whisper.Dispose();
         _azure.Dispose();
     }
 }

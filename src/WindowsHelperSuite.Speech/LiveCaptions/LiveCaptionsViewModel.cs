@@ -22,6 +22,8 @@ public partial class LiveCaptionsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _displayText = "Press Start Listening";
     [ObservableProperty] private string _statusText = "Idle";
     [ObservableProperty] private string _engineText = "";
+    [ObservableProperty] private string _errorText = string.Empty;
+    [ObservableProperty] private bool _hasError;
     [ObservableProperty] private bool _isListening;
     [ObservableProperty] private double _captionFontSize = 96;
     [ObservableProperty] private bool _appendMode = true;
@@ -37,6 +39,7 @@ public partial class LiveCaptionsViewModel : ObservableObject, IDisposable
     public IRelayCommand ClearCommand { get; }
     public IRelayCommand CopyCommand { get; }
     public IRelayCommand SaveCommand { get; }
+    public IRelayCommand DismissErrorCommand { get; }
     public IRelayCommand ToggleAlwaysOnTopCommand { get; }
     public IRelayCommand ToggleFullscreenCommand { get; }
     public IRelayCommand ToggleAppendModeCommand { get; }
@@ -60,6 +63,7 @@ public partial class LiveCaptionsViewModel : ObservableObject, IDisposable
         ClearCommand = new RelayCommand(Clear);
         CopyCommand = new RelayCommand(Copy);
         SaveCommand = new RelayCommand(Save);
+        DismissErrorCommand = new RelayCommand(DismissError);
         ToggleAlwaysOnTopCommand = new RelayCommand(() => AlwaysOnTop = !AlwaysOnTop);
         ToggleFullscreenCommand = new RelayCommand(() => IsFullscreen = !IsFullscreen);
         ToggleAppendModeCommand = new RelayCommand(() => AppendMode = !AppendMode);
@@ -74,6 +78,9 @@ public partial class LiveCaptionsViewModel : ObservableObject, IDisposable
 
     private async Task StartAsync()
     {
+        // Reset any prior error so the new attempt is not obscured by stale text
+        // and so OnStateChanged is free to update StatusText normally.
+        DismissError();
         StatusText = "Starting…";
         var lang = _settingsService?.Settings.LiveCaptions.RecognitionLanguage ?? "en-US";
         await _speech.StartAsync(lang).ConfigureAwait(false);
@@ -90,8 +97,15 @@ public partial class LiveCaptionsViewModel : ObservableObject, IDisposable
     {
         _finalTranscript = string.Empty;
         _partial = string.Empty;
+        DismissError();
         DisplayText = IsListening ? "Listening…" : "Press Start Listening";
         StatusText = "Cleared";
+    }
+
+    private void DismissError()
+    {
+        ErrorText = string.Empty;
+        HasError = false;
     }
 
     private void Copy()
@@ -173,7 +187,15 @@ public partial class LiveCaptionsViewModel : ObservableObject, IDisposable
 
     private void OnError(object? sender, string message)
     {
-        RunOnUi(() => StatusText = message);
+        if (string.IsNullOrWhiteSpace(message)) return;
+
+        RunOnUi(() =>
+        {
+            ErrorText = message;
+            HasError = true;
+            // Keep the status bar terse; the full message lives in the red banner.
+            StatusText = "Error";
+        });
     }
 
     private void OnStateChanged(object? sender, bool listening)
@@ -181,7 +203,13 @@ public partial class LiveCaptionsViewModel : ObservableObject, IDisposable
         RunOnUi(() =>
         {
             IsListening = listening;
-            StatusText = listening ? "Listening" : "Stopped";
+            // When an error has been surfaced, keep it visible in the status bar
+            // instead of overwriting it with "Stopped" from the shutdown that
+            // follows a failed Start.
+            if (!HasError || listening)
+            {
+                StatusText = listening ? "Listening" : "Stopped";
+            }
             EngineText = _speech.ActiveEngineName;
             StartCommand.NotifyCanExecuteChanged();
             StopCommand.NotifyCanExecuteChanged();

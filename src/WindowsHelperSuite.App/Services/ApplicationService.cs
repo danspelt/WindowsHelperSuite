@@ -1818,9 +1818,10 @@ public class ApplicationService : IDisposable
                 return;
             }
 
-            // Fresh composite service per-open so engine selection (Azure vs WinRT) re-evaluates.
+            // Fresh composite service per-open so engine selection (Whisper/Azure/WinRT) re-evaluates.
             var liveSpeech = new CompositeLiveSpeechService(
                 () => _settingsService.Settings.Speech,
+                () => _settingsService.Settings.LiveCaptions,
                 _loggingService);
 
             LiveCaptionsWindow? window = null;

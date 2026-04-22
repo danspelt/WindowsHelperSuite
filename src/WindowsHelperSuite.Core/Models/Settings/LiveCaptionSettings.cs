@@ -20,4 +20,15 @@ public class LiveCaptionSettings
 
     /// <summary>IETF BCP-47 language tag for recognition (e.g. en-US).</summary>
     public string RecognitionLanguage { get; set; } = "en-US";
+
+    // ── OpenAI Whisper Speech Recognition ──────────────────────────────────────
+
+    /// <summary>OpenAI API key for Whisper speech-to-text; if empty, OPENAI_API_KEY env var is used.</summary>
+    public string OpenAiApiKey { get; set; } = string.Empty;
+
+    /// <summary>Whisper model to use: whisper-1 (default), gpt-4o-transcribe, or gpt-4o-mini-transcribe.</summary>
+    public string OpenAiWhisperModel { get; set; } = "whisper-1";
+
+    /// <summary>Transcription prompt to guide Whisper recognition (e.g. "User has cerebral palsy, speech may be slurred").</summary>
+    public string OpenAiWhisperPrompt { get; set; } = string.Empty;
 }
