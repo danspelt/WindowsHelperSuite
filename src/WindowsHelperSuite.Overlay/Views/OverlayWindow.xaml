@@ -271,7 +271,7 @@
                             <Run Text="Esc" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondary}"/>
                             <Run Text=" close · " Foreground="{DynamicResource TextSecondary}"/>
                             <Run Text="`" FontWeight="Bold" Foreground="{DynamicResource AccentPurple}"/>
-                            <Run Text=" refresh" Foreground="{DynamicResource TextSecondary}"/>
+                            <Run Text=" wake" Foreground="{DynamicResource TextSecondary}"/>
                         </TextBlock>
                     </Grid>
                     </Border>

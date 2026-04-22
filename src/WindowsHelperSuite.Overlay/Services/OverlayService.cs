@@ -25,6 +25,7 @@ public class OverlayService : IOverlayService, IDisposable
 
     public event EventHandler<int>? SuggestionSelected;
     public event EventHandler<string?>? SuggestionHighlightChanged;
+    public event EventHandler? CloseRequested;
 
     // ── Writer suppression (close-button disables writer for a period) ──
     private DateTime? _suppressedUntilUtc;
@@ -390,8 +391,11 @@ public class OverlayService : IOverlayService, IDisposable
                 _overlayWindow.PreviousPageRequested += (s, e) => MoveToPreviousPage();
                 _overlayWindow.CloseRequested += (s, e) =>
                 {
-                    _loggingService.Information("Overlay closed via close button — suppressing writer for 1 hour");
+                    _loggingService.Information("Overlay closed via close button — suppressing writer for 1 hour and requesting sleep");
                     SuppressFor(TimeSpan.FromHours(1));
+                    // Notify ApplicationService so it can put the writer to sleep
+                    // (so every keystroke no longer triggers the prediction pipeline).
+                    CloseRequested?.Invoke(this, EventArgs.Empty);
                 };
             });
         }

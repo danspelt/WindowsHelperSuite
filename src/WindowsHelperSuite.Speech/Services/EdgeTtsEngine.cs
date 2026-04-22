@@ -1,3 +1,4 @@
+using System.IO;
 using edge_tts_net;
 using NAudio.Wave;
 using WindowsHelperSuite.Core.Interfaces;

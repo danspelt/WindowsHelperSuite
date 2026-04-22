@@ -5,6 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.1" />
     <PackageReference Include="edge-tts-net" Version="2.0.0" />
     <PackageReference Include="Microsoft.CognitiveServices.Speech" Version="1.48.2" />
     <PackageReference Include="NAudio" Version="2.2.1" />
@@ -15,6 +16,7 @@
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
 
 </Project>
