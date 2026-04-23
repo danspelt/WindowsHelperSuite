@@ -22,7 +22,8 @@ public partial class HotkeySettingsWindow : Window
     public const int TabHotkeys = 1;
     public const int TabSpeech = 2;
     public const int TabWriter = 3;
-    public const int TabWordsPhrases = 4;
+    public const int TabLiveCaptions = 4;
+    public const int TabWordsPhrases = 5;
 
     private readonly ISettingsService _settingsService;
     private readonly Action _onSaved;
@@ -107,8 +108,10 @@ public partial class HotkeySettingsWindow : Window
     private QuickTextSettings _pendingQuickText = new();
     private SpeechSettings _pendingSpeech = new();
     private WriterSettings _pendingWriter = new();
+    private LiveCaptionSettings _pendingLiveCaptions = new();
     private bool _speechUiWired;
     private bool _writerUiWired;
+    private bool _liveCaptionsUiWired;
 
     private static readonly JsonSerializerOptions CloneJson = new()
     {
@@ -126,6 +129,7 @@ public partial class HotkeySettingsWindow : Window
         _pendingQuickText = QuickTextSettingsService.Clone(_settingsService.Settings.QuickText);
         _pendingSpeech = DeepClone(_settingsService.Settings.Speech);
         _pendingWriter = DeepClone(_settingsService.Settings.Writer);
+        _pendingLiveCaptions = DeepClone(_settingsService.Settings.LiveCaptions);
         LoadBindings();
         LoadAppearance();
         Loaded += (_, _) =>
@@ -134,6 +138,7 @@ public partial class HotkeySettingsWindow : Window
             BuildAppearanceTab();
             BuildSpeechTab();
             BuildWriterTab();
+            BuildLiveCaptionsTab();
             WordsPhrasesPanel.Attach(_pendingQuickText);
             if (_initialTabIndex is int tab)
             {
@@ -394,6 +399,58 @@ public partial class HotkeySettingsWindow : Window
         WriterTitleHints.IsChecked = _pendingWriter.UseWindowTitleForPhraseHints;
         WriterTitleHints.Checked += (_, _) => _pendingWriter.UseWindowTitleForPhraseHints = true;
         WriterTitleHints.Unchecked += (_, _) => _pendingWriter.UseWindowTitleForPhraseHints = false;
+    }
+
+    private void BuildLiveCaptionsTab()
+    {
+        if (!_liveCaptionsUiWired)
+        {
+            LiveCaptionsWhisperModelCombo.Items.Clear();
+            var models = new[] { "whisper-1", "gpt-4o-transcribe", "gpt-4o-mini-transcribe" };
+            foreach (var m in models)
+            {
+                LiveCaptionsWhisperModelCombo.Items.Add(new ComboBoxItem { Content = m, Tag = m });
+            }
+
+            LiveCaptionsOpenAiApiKeyBox.TextChanged += (_, _) =>
+                _pendingLiveCaptions.OpenAiApiKey = LiveCaptionsOpenAiApiKeyBox.Text.Trim();
+
+            LiveCaptionsWhisperPromptBox.TextChanged += (_, _) =>
+                _pendingLiveCaptions.OpenAiWhisperPrompt = LiveCaptionsWhisperPromptBox.Text;
+
+            LiveCaptionsWhisperPhraseHintsBox.TextChanged += (_, _) =>
+                _pendingLiveCaptions.OpenAiWhisperPhraseHints = LiveCaptionsWhisperPhraseHintsBox.Text;
+
+            LiveCaptionsWhisperExamplesBox.TextChanged += (_, _) =>
+                _pendingLiveCaptions.OpenAiWhisperExampleSentences = LiveCaptionsWhisperExamplesBox.Text;
+
+            LiveCaptionsWhisperModelCombo.SelectionChanged += (_, _) =>
+            {
+                if (LiveCaptionsWhisperModelCombo.SelectedItem is ComboBoxItem { Tag: string model })
+                {
+                    _pendingLiveCaptions.OpenAiWhisperModel = model;
+                }
+            };
+
+            _liveCaptionsUiWired = true;
+        }
+
+        LiveCaptionsOpenAiApiKeyBox.Text = _pendingLiveCaptions.OpenAiApiKey ?? string.Empty;
+        LiveCaptionsWhisperPromptBox.Text = _pendingLiveCaptions.OpenAiWhisperPrompt ?? string.Empty;
+        LiveCaptionsWhisperPhraseHintsBox.Text = _pendingLiveCaptions.OpenAiWhisperPhraseHints ?? string.Empty;
+        LiveCaptionsWhisperExamplesBox.Text = _pendingLiveCaptions.OpenAiWhisperExampleSentences ?? string.Empty;
+
+        var selected = string.IsNullOrWhiteSpace(_pendingLiveCaptions.OpenAiWhisperModel)
+            ? "whisper-1"
+            : _pendingLiveCaptions.OpenAiWhisperModel.Trim();
+        foreach (ComboBoxItem ci in LiveCaptionsWhisperModelCombo.Items)
+        {
+            if (ci.Tag is string t && string.Equals(t, selected, StringComparison.OrdinalIgnoreCase))
+            {
+                LiveCaptionsWhisperModelCombo.SelectedItem = ci;
+                break;
+            }
+        }
     }
 
     private static string DescribeVoiceMode(SpeechVoiceMode m) => m switch
@@ -851,6 +908,10 @@ public partial class HotkeySettingsWindow : Window
                 BuildWriterTab();
                 break;
             case 4:
+                _pendingLiveCaptions = new LiveCaptionSettings();
+                BuildLiveCaptionsTab();
+                break;
+            case 5:
                 QuickTextSettingsService.ResetToFactoryDefaults(_pendingQuickText);
                 WordsPhrasesPanel.Attach(_pendingQuickText);
                 break;
@@ -894,6 +955,7 @@ public partial class HotkeySettingsWindow : Window
         _settingsService.Settings.QuickText = QuickTextSettingsService.Clone(_pendingQuickText);
         _settingsService.Settings.Speech = DeepClone(_pendingSpeech);
         _settingsService.Settings.Writer = DeepClone(_pendingWriter);
+        _settingsService.Settings.LiveCaptions = DeepClone(_pendingLiveCaptions);
 
         _settingsService.Save();
         _onSaved();

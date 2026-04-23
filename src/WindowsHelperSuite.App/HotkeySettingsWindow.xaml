@@ -1040,6 +1040,70 @@
             </TabItem>
 
             <!-- ═══════════ WORDS &amp; PHRASES ═══════════ -->
+            <TabItem Header="🗣  Live Captions">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Background="#0F0F1A">
+                    <StackPanel Margin="20,16,20,20">
+                        <TextBlock Text="OPENAI WHISPER (SPEECH-TO-TEXT)" Style="{StaticResource ColHeader}" Margin="0,0,0,4"/>
+                        <TextBlock Text="These settings improve transcription accuracy for your voice. Phrase hints and example sentences can make a big difference."
+                                   FontSize="12" Foreground="#55558A" Margin="0,0,0,12" TextWrapping="Wrap"/>
+
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <StackPanel>
+                                <TextBlock Text="OpenAI API key (optional; can also use OPENAI_API_KEY env var)" Foreground="#D8D8F0" Margin="0,0,0,6"/>
+                                <TextBox x:Name="LiveCaptionsOpenAiApiKeyBox" Style="{StaticResource SettingsFieldTextBox}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <StackPanel>
+                                <TextBlock Text="Whisper model" Foreground="#D8D8F0" Margin="0,0,0,6"/>
+                                <ComboBox x:Name="LiveCaptionsWhisperModelCombo"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <StackPanel>
+                                <TextBlock Text="Base transcription prompt" Foreground="#D8D8F0" Margin="0,0,0,6"/>
+                                <TextBox x:Name="LiveCaptionsWhisperPromptBox"
+                                         Style="{StaticResource SettingsFieldTextBox}"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         MinHeight="90"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <StackPanel>
+                                <TextBlock Text="Phrase hints (one per line)" Foreground="#D8D8F0" Margin="0,0,0,2"/>
+                                <TextBlock Text="Add names, places, apps, medical terms, and phrases you say often."
+                                           FontSize="11" Foreground="#6A6A92" Margin="0,0,0,6" TextWrapping="Wrap"/>
+                                <TextBox x:Name="LiveCaptionsWhisperPhraseHintsBox"
+                                         Style="{StaticResource SettingsFieldTextBox}"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         MinHeight="120"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <StackPanel>
+                                <TextBlock Text="Example sentences (one per line, optional)" Foreground="#D8D8F0" Margin="0,0,0,2"/>
+                                <TextBlock Text="Write a few short sentences in the way you normally talk. This helps bias transcription toward your phrasing."
+                                           FontSize="11" Foreground="#6A6A92" Margin="0,0,0,6" TextWrapping="Wrap"/>
+                                <TextBox x:Name="LiveCaptionsWhisperExamplesBox"
+                                         Style="{StaticResource SettingsFieldTextBox}"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         VerticalScrollBarVisibility="Auto"
+                                         MinHeight="120"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <TabItem Header="📋  Words &amp; Phrases">
                 <local:WordsPhrasesSettingsPanel x:Name="WordsPhrasesPanel" Margin="4"/>
             </TabItem>

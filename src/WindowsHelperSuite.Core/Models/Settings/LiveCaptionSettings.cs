@@ -30,5 +30,17 @@ public class LiveCaptionSettings
     public string OpenAiWhisperModel { get; set; } = "whisper-1";
 
     /// <summary>Transcription prompt to guide Whisper recognition (e.g. "User has cerebral palsy, speech may be slurred").</summary>
-    public string OpenAiWhisperPrompt { get; set; } = string.Empty;
+    public string OpenAiWhisperPrompt { get; set; } =
+        "The speaker has cerebral palsy (dysarthric/slurred speech). Transcribe faithfully. Prefer likely intended words. Keep meaning; do not paraphrase.";
+
+    /// <summary>
+    /// Extra phrase hints, one per line (names, places, apps, medical terms, frequent phrases).
+    /// These are appended to <see cref="OpenAiWhisperPrompt"/> when calling the API.
+    /// </summary>
+    public string OpenAiWhisperPhraseHints { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional example sentences in the speaker's style (one per line). Helps bias transcription toward your phrasing.
+    /// </summary>
+    public string OpenAiWhisperExampleSentences { get; set; } = string.Empty;
 }

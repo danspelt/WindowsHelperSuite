@@ -47,6 +47,47 @@ internal sealed class OpenAiWhisperLiveSpeechEngine : ILiveSpeechService, IDispo
         _log = log;
     }
 
+    private static string BuildEffectivePrompt(LiveCaptionSettings settings)
+    {
+        static IEnumerable<string> SplitLines(string? s) =>
+            (s ?? string.Empty)
+                .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var basePrompt = settings.OpenAiWhisperPrompt?.Trim() ?? string.Empty;
+        var hints = SplitLines(settings.OpenAiWhisperPhraseHints).Take(80).ToList();
+        var examples = SplitLines(settings.OpenAiWhisperExampleSentences).Take(40).ToList();
+
+        if (string.IsNullOrWhiteSpace(basePrompt) && hints.Count == 0 && examples.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(basePrompt))
+        {
+            sb.AppendLine(basePrompt);
+        }
+
+        if (hints.Count > 0)
+        {
+            if (sb.Length > 0) sb.AppendLine();
+            sb.AppendLine("Vocabulary / phrase hints (likely words and names):");
+            foreach (var h in hints)
+                sb.AppendLine($"- {h}");
+        }
+
+        if (examples.Count > 0)
+        {
+            if (sb.Length > 0) sb.AppendLine();
+            sb.AppendLine("Example sentences (speaker style):");
+            foreach (var ex in examples)
+                sb.AppendLine($"- {ex}");
+        }
+
+        // Keep prompts reasonably sized (helps latency + avoids request issues).
+        const int maxChars = 1200;
+        var text = sb.ToString().Trim();
+        return text.Length <= maxChars ? text : text[..maxChars];
+    }
+
     public static string? ResolveApiKey(LiveCaptionSettings settings)
     {
         var k = settings.OpenAiApiKey?.Trim();
@@ -251,6 +292,16 @@ internal sealed class OpenAiWhisperLiveSpeechEngine : ILiveSpeechService, IDispo
         if (string.IsNullOrEmpty(key))
             return;
 
+        static string NormalizeLanguage(string? tag)
+        {
+            var t = (tag ?? "").Trim();
+            if (t.Length == 0) return "en";
+            // OpenAI STT expects ISO 639-1 like "en" (not BCP-47 like "en-US").
+            var dash = t.IndexOf('-');
+            if (dash > 0) t = t[..dash];
+            return t.Length == 0 ? "en" : t.ToLowerInvariant();
+        }
+
         // Convert PCM to WAV in memory (Whisper API accepts audio files)
         byte[] wavBytes;
         using (var ms = new MemoryStream())
@@ -265,11 +316,12 @@ internal sealed class OpenAiWhisperLiveSpeechEngine : ILiveSpeechService, IDispo
         // Build multipart/form-data request
         var content = new MultipartFormDataContent();
         content.Add(new StringContent(settings.OpenAiWhisperModel?.Trim() ?? "whisper-1"), "model");
-        content.Add(new StringContent(settings.RecognitionLanguage?.Trim() ?? "en"), "language");
-        content.Add(new StringContent("transcript"), "response_format");
+        content.Add(new StringContent(NormalizeLanguage(settings.RecognitionLanguage)), "language");
+        // "text" is the simplest + most compatible response format.
+        content.Add(new StringContent("text"), "response_format");
 
         // Prompt helps guide recognition for specific speech patterns
-        var prompt = settings.OpenAiWhisperPrompt?.Trim();
+        var prompt = BuildEffectivePrompt(settings);
         if (!string.IsNullOrEmpty(prompt))
             content.Add(new StringContent(prompt), "prompt");
 
@@ -295,7 +347,15 @@ internal sealed class OpenAiWhisperLiveSpeechEngine : ILiveSpeechService, IDispo
         if (!res.IsSuccessStatusCode)
         {
             var err = await res.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-            _log?.Debug($"Whisper API error: {(int)res.StatusCode} {err}");
+            _log?.Warning($"Whisper API error: {(int)res.StatusCode} {err}");
+            var msg = res.StatusCode switch
+            {
+                System.Net.HttpStatusCode.Unauthorized => "Whisper authentication failed (401). Check your OpenAI API key.",
+                System.Net.HttpStatusCode.Forbidden => "Whisper access denied (403). Your API key may lack permissions.",
+                System.Net.HttpStatusCode.TooManyRequests => "Whisper is rate-limiting requests (429). Please wait a moment and try again.",
+                _ => $"Whisper request failed ({(int)res.StatusCode})."
+            };
+            ErrorOccurred?.Invoke(this, msg);
             return;
         }
 
@@ -303,8 +363,8 @@ internal sealed class OpenAiWhisperLiveSpeechEngine : ILiveSpeechService, IDispo
         string? text = null;
         try
         {
-            using var doc = JsonDocument.Parse(json);
-            text = doc.RootElement.GetProperty("text").GetString()?.Trim();
+            // When response_format=text, the response body is the transcript itself.
+            text = json.Trim();
         }
         catch { /* ignore parse errors */ }
 

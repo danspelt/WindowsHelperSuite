@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -29,6 +30,8 @@ public partial class LiveCaptionsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _appendMode = true;
     [ObservableProperty] private bool _alwaysOnTop;
     [ObservableProperty] private bool _isFullscreen;
+    [ObservableProperty] private ObservableCollection<SpeechEngineOption> _availableEngines = new();
+    [ObservableProperty] private SpeechEngineOption? _selectedEngine;
 
     private string _finalTranscript = string.Empty;
     private string _partial = string.Empty;
@@ -74,6 +77,48 @@ public partial class LiveCaptionsViewModel : ObservableObject, IDisposable
         _speech.ListeningStateChanged += OnStateChanged;
 
         EngineText = _speech.ActiveEngineName;
+
+        // Initialize engine selector
+        InitializeEngineSelector();
+    }
+
+    partial void OnSelectedEngineChanged(SpeechEngineOption? value)
+    {
+        if (value == null || _speech is not CompositeLiveSpeechService composite)
+            return;
+
+        // Switch engine on the fly
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var lang = _settingsService?.Settings.LiveCaptions.RecognitionLanguage ?? "en-US";
+                var success = await composite.SwitchToEngineAsync(value.Id, lang).ConfigureAwait(false);
+                if (success)
+                {
+                    RunOnUi(() => EngineText = _speech.ActiveEngineName);
+                }
+            }
+            catch (Exception ex)
+            {
+                _log?.Warning($"Engine switch failed: {ex.Message}");
+            }
+        });
+    }
+
+    private void InitializeEngineSelector()
+    {
+        if (_speech is not CompositeLiveSpeechService composite)
+            return;
+
+        var engines = composite.GetAvailableEngines();
+        AvailableEngines = new ObservableCollection<SpeechEngineOption>(engines);
+
+        // Select current or default
+        var current = engines.FirstOrDefault(e => e.Id == composite.PreferredEngine)
+            ?? engines.FirstOrDefault(e => e.IsAvailable)
+            ?? engines.Last();
+        SelectedEngine = current;
     }
 
     private async Task StartAsync()

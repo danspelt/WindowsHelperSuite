@@ -4,12 +4,35 @@ using WindowsHelperSuite.Core.Models.Settings;
 namespace WindowsHelperSuite.Speech.LiveCaptions;
 
 /// <summary>
-/// Live captions engine router: prefers OpenAI Whisper (when API key is configured),
-/// then Azure (when key+region are configured), otherwise falls back to the built-in
-/// Windows WinRT recognizer. Consumers only see a single <see cref="ILiveSpeechService"/> surface.
+/// Represents an available speech recognition engine option.
+/// </summary>
+public sealed class SpeechEngineOption
+{
+    public string Id { get; }
+    public string Name { get; }
+    public bool IsAvailable { get; }
+
+    public SpeechEngineOption(string id, string name, bool isAvailable)
+    {
+        Id = id;
+        Name = name;
+        IsAvailable = isAvailable;
+    }
+
+    public override string ToString() => Name;
+}
+
+/// <summary>
+/// Live captions engine router: supports OpenAI Whisper, Azure, and Windows WinRT.
+/// Can auto-select or be explicitly switched via <see cref="SwitchToEngine"/>.
+/// Consumers only see a single <see cref="ILiveSpeechService"/> surface.
 /// </summary>
 public sealed class CompositeLiveSpeechService : ILiveSpeechService, IDisposable
 {
+    public const string EngineWhisper = "whisper";
+    public const string EngineAzure = "azure";
+    public const string EngineWindows = "windows";
+    public const string EngineAuto = "auto";
     private readonly Func<SpeechSettings> _getSettings;
     private readonly Func<LiveCaptionSettings> _getLiveCaptionSettings;
     private readonly ILoggingService? _log;
@@ -17,6 +40,7 @@ public sealed class CompositeLiveSpeechService : ILiveSpeechService, IDisposable
     private readonly AzureLiveSpeechEngine _azure;
     private readonly WindowsLiveSpeechEngine _windows;
     private ILiveSpeechService? _active;
+    private string _preferredEngine = EngineAuto;
 
     public event EventHandler<string>? PartialTextReceived;
     public event EventHandler<string>? FinalTextReceived;
@@ -25,6 +49,73 @@ public sealed class CompositeLiveSpeechService : ILiveSpeechService, IDisposable
 
     public string ActiveEngineName => _active?.ActiveEngineName ?? ResolveEnginePreview();
     public bool IsListening => _active?.IsListening ?? false;
+
+    /// <summary>
+    /// Gets or sets the preferred engine ID (whisper, azure, windows, or auto).
+    /// Changing this takes effect on the next StartAsync or immediately if currently listening.
+    /// </summary>
+    public string PreferredEngine
+    {
+        get => _preferredEngine;
+        set => _preferredEngine = value?.Trim().ToLowerInvariant() ?? EngineAuto;
+    }
+
+    /// <summary>
+    /// Returns all available engines with their availability status.
+    /// </summary>
+    public IReadOnlyList<SpeechEngineOption> GetAvailableEngines()
+    {
+        return new[]
+        {
+            new SpeechEngineOption(EngineWhisper, "OpenAI Whisper", _whisper.IsConfigured()),
+            new SpeechEngineOption(EngineAzure, "Azure Speech", _azure.IsConfigured()),
+            new SpeechEngineOption(EngineWindows, "Windows WinRT", WindowsLiveSpeechEngine.IsSupported),
+            new SpeechEngineOption(EngineAuto, "Auto (Best Available)", true)
+        };
+    }
+
+    /// <summary>
+    /// Switches to the specified engine. If currently listening, stops and restarts with the new engine.
+    /// </summary>
+    public async Task<bool> SwitchToEngineAsync(string engineId, string languageTag = "en-US", CancellationToken cancellationToken = default)
+    {
+        var target = engineId?.Trim().ToLowerInvariant() ?? EngineAuto;
+        if (target == EngineAuto)
+        {
+            _preferredEngine = EngineAuto;
+        }
+        else if (target != EngineWhisper && target != EngineAzure && target != EngineWindows)
+        {
+            _log?.Warning($"Invalid engine ID: {engineId}");
+            return false;
+        }
+        else
+        {
+            _preferredEngine = target;
+        }
+
+        var wasListening = IsListening;
+        if (wasListening)
+        {
+            await StopAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (wasListening || _active != null)
+        {
+            try
+            {
+                await StartAsync(languageTag, cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _log?.Warning($"Failed to switch to engine {engineId}: {ex.Message}");
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     public CompositeLiveSpeechService(
         Func<SpeechSettings> getSettings,
@@ -69,7 +160,24 @@ public sealed class CompositeLiveSpeechService : ILiveSpeechService, IDisposable
 
     private ILiveSpeechService ChooseEngine()
     {
-        // Prefer Whisper (best for diverse speech patterns including cerebral palsy)
+        // If user explicitly selected an engine, try that first
+        if (_preferredEngine == EngineWhisper)
+        {
+            if (_whisper.IsConfigured()) return _whisper;
+            _log?.Warning("Whisper requested but not configured; falling back");
+        }
+        else if (_preferredEngine == EngineAzure)
+        {
+            if (_azure.IsConfigured()) return _azure;
+            _log?.Warning("Azure requested but not configured; falling back");
+        }
+        else if (_preferredEngine == EngineWindows)
+        {
+            if (WindowsLiveSpeechEngine.IsSupported) return _windows;
+            _log?.Warning("Windows requested but not supported; falling back");
+        }
+
+        // Auto mode: Prefer Whisper (best for diverse speech patterns including cerebral palsy)
         if (_whisper.IsConfigured())
         {
             return _whisper;

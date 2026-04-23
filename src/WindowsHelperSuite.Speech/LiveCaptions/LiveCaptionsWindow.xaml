@@ -132,8 +132,21 @@
                             Style="{StaticResource ToolbarButton}"/>
                 </StackPanel>
 
-                <!-- Preference toggles (right side) -->
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+                <!-- Engine selector (center/right) -->
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" Margin="0,0,12,0">
+                    <ComboBox ItemsSource="{Binding AvailableEngines}"
+                              SelectedItem="{Binding SelectedEngine}"
+                              DisplayMemberPath="Name"
+                              Width="160"
+                              Height="36"
+                              Margin="0,0,8,0"
+                              Background="#1C1C1C"
+                              Foreground="#EAEAEA"
+                              BorderBrush="#333333"
+                              FontSize="12"
+                              FontWeight="SemiBold"
+                              VerticalContentAlignment="Center"
+                              ToolTip="Speech recognition engine (change on the fly)"/>
                     <ToggleButton Content="Append"
                                   IsChecked="{Binding AppendMode}"
                                   ToolTip="Append each final result (vs replace)"
