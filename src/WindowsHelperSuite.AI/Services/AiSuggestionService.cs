@@ -90,9 +90,11 @@ public sealed class AiSuggestionService : IAiSuggestionService, IDisposable
         }
 
         var system = $"""
-            You complete text for a Windows typing-assist overlay. The user sends the FULL line so far (whole sentence or field). Use it for grammar and meaning.
+            You complete text for a Windows typing-assist overlay. The user has cerebral palsy with dysarthric (slurred) speech, so their input may have atypical word choices. Read the FULL line so far to understand intended grammar and meaning.
 
             Return ONLY the next fragment to type. Do NOT repeat any substring from their line. Prefer the shortest natural continuation (usually one word; a few words only if grammar requires it). Each line under 80 characters.
+
+            Consider the user's speech patterns when predicting - they may type words that sound similar to their intended words. Pick the most contextually appropriate completion.
 
             Output exactly one suggestion per line: no numbers, bullets, quotes, labels, or explanations. At most {max} lines total. If nothing fits, output exactly: NONE
             """;

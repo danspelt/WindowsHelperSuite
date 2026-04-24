@@ -223,10 +223,11 @@ internal sealed class OpenAiWhisperLiveSpeechEngine : ILiveSpeechService, IDispo
 
     private async Task CaptureLoopAsync(CancellationToken ct)
     {
-        // Process audio in ~2-second windows (Whisper works best with 5-30s chunks,
-        // but for Live Captions we trade latency for accuracy by using smaller chunks)
-        const int chunkMs = 2000;
-        const int silenceMs = 800; // ms of silence to trigger finalization
+        // Process audio in ~4-second windows (Whisper works best with 5-30s chunks,
+        // but for Live Captions we trade latency for accuracy. 4s gives better context than 2s
+        // while still feeling responsive)
+        const int chunkMs = 4000;
+        const int silenceMs = 600; // ms of silence to trigger finalization
 
         var lastProcessed = DateTime.UtcNow;
 
@@ -371,6 +372,13 @@ internal sealed class OpenAiWhisperLiveSpeechEngine : ILiveSpeechService, IDispo
         if (string.IsNullOrWhiteSpace(text))
             return;
 
+        // Filter common hallucinations and garbage
+        if (IsLikelyHallucination(text))
+        {
+            _log?.Debug($"Filtered likely hallucination: {text}");
+            return;
+        }
+
         if (isFinal)
         {
             FinalTextReceived?.Invoke(this, text);
@@ -388,6 +396,42 @@ internal sealed class OpenAiWhisperLiveSpeechEngine : ILiveSpeechService, IDispo
             }
             PartialTextReceived?.Invoke(this, text);
         }
+    }
+
+    /// <summary>
+    /// Detects common Whisper hallucinations and garbage output.
+    /// </summary>
+    private static bool IsLikelyHallucination(string text)
+    {
+        var lower = text.ToLowerInvariant();
+
+        // Common hallucination patterns
+        var garbagePatterns = new[]
+        {
+            "www.", ".com", ".org", ".gov", "http", "https://",
+            "subscribe", "click the link", "follow me on",
+            "learn more at", "visit our website",
+            "captions by", "transcribed by",
+            "thank you for watching", "thanks for watching",
+            "click here", "check out my",
+            "---", "===", "...", "[music]", "[applause]"
+        };
+
+        foreach (var pattern in garbagePatterns)
+        {
+            if (lower.Contains(pattern))
+                return true;
+        }
+
+        // Single words that are likely hallucinations when they appear alone
+        if (text.Trim().Split().Length == 1)
+        {
+            var singleWordGarbage = new[] { "um", "uh", "ah", "oh", "mm", "hmm" };
+            if (singleWordGarbage.Any(w => lower.Trim() == w))
+                return true;
+        }
+
+        return false;
     }
 
     private static double CalculateRms(byte[] pcm16)

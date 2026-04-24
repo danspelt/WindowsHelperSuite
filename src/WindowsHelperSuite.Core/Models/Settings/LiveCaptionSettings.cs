@@ -26,8 +26,8 @@ public class LiveCaptionSettings
     /// <summary>OpenAI API key for Whisper speech-to-text; if empty, OPENAI_API_KEY env var is used.</summary>
     public string OpenAiApiKey { get; set; } = string.Empty;
 
-    /// <summary>Whisper model to use: whisper-1 (default), gpt-4o-transcribe, or gpt-4o-mini-transcribe.</summary>
-    public string OpenAiWhisperModel { get; set; } = "whisper-1";
+    /// <summary>Whisper model to use: gpt-4o-transcribe (default, best for atypical speech), whisper-1, or gpt-4o-mini-transcribe.</summary>
+    public string OpenAiWhisperModel { get; set; } = "gpt-4o-transcribe";
 
     /// <summary>Transcription prompt to guide Whisper recognition (e.g. "User has cerebral palsy, speech may be slurred").</summary>
     public string OpenAiWhisperPrompt { get; set; } =

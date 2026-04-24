@@ -28,6 +28,7 @@ public partial class LiveCaptionsViewModel : ObservableObject, IDisposable
     [ObservableProperty] private bool _isListening;
     [ObservableProperty] private double _captionFontSize = 96;
     [ObservableProperty] private bool _appendMode = true;
+    [ObservableProperty] private bool _singleSentenceMode; // true = show only current utterance, replacing in real-time
     [ObservableProperty] private bool _alwaysOnTop;
     [ObservableProperty] private bool _isFullscreen;
     [ObservableProperty] private ObservableCollection<SpeechEngineOption> _availableEngines = new();
@@ -205,6 +206,11 @@ public partial class LiveCaptionsViewModel : ObservableObject, IDisposable
         RunOnUi(() =>
         {
             _partial = text;
+            // In single sentence mode, clear the accumulated final text so we only show current utterance
+            if (SingleSentenceMode)
+            {
+                _finalTranscript = string.Empty;
+            }
             RefreshDisplay();
         });
     }
@@ -213,19 +219,26 @@ public partial class LiveCaptionsViewModel : ObservableObject, IDisposable
     {
         RunOnUi(() =>
         {
-            if (AppendMode)
+            if (SingleSentenceMode)
+            {
+                // Single sentence mode: show this final result, discard previous
+                _finalTranscript = text;
+                _partial = string.Empty;
+            }
+            else if (AppendMode)
             {
                 _finalTranscript = string.IsNullOrWhiteSpace(_finalTranscript)
                     ? text
                     : $"{_finalTranscript} {text}";
+                _partial = string.Empty;
             }
             else
             {
                 // Replace-mode: each final result wipes the prior transcript.
                 _finalTranscript = text;
+                _partial = string.Empty;
             }
 
-            _partial = string.Empty;
             RefreshDisplay();
         });
     }

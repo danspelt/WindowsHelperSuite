@@ -7,7 +7,7 @@
 #define MyAppName "Windows Helper Suite"
 #define MyAppExeName "WindowsHelperSuite.exe"
 ; Keep in sync with WindowsHelperSuite.App.csproj <Version>
-#define MyAppVersion "1.2.3"
+#define MyAppVersion "1.3.0"
 #define MyAppPublisher "Dan Spelt"
 ; Stable AppId — do not change after first public release (upgrades/uninstall depend on it)
 #define MyAppId "{{A7F3C8D1-4E2B-5A6C-9D0E-1F2A3B4C5D6E}"

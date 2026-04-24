@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
+        xmlns:local="clr-namespace:WindowsHelperSuite.Speech.LiveCaptions"
         mc:Ignorable="d"
         Title="Live Captions — Windows Helper Suite"
         Height="540" Width="960"
@@ -13,6 +15,7 @@
         Topmost="{Binding AlwaysOnTop}">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <local:InverseBoolConverter x:Key="InverseBool"/>
 
         <!-- Base filled toolbar button -->
         <Style x:Key="ToolbarButton" TargetType="Button">
@@ -50,6 +53,114 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <!-- ComboBox style for dark theme with readable text -->
+        <Style x:Key="DarkComboBox" TargetType="ComboBox">
+            <Setter Property="Background" Value="#1C1C1C"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#333333"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="8,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="MainBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="6">
+                                <Grid>
+                                    <ToggleButton x:Name="ToggleButton"
+                                                  Background="Transparent"
+                                                  BorderThickness="0"
+                                                  IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                                  ClickMode="Press"/>
+                                    <ContentPresenter x:Name="ContentSite"
+                                                      Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                                      HorizontalAlignment="Left"
+                                                      VerticalAlignment="Center"
+                                                      Margin="12,0,28,0"
+                                                      IsHitTestVisible="False">
+                                        <ContentPresenter.Resources>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                            </Style>
+                                        </ContentPresenter.Resources>
+                                    </ContentPresenter>
+                                    <TextBlock Text="▼" 
+                                               HorizontalAlignment="Right"
+                                               VerticalAlignment="Center"
+                                               Foreground="#AAAAAA"
+                                               Margin="0,0,12,0"
+                                               FontSize="10"
+                                               IsHitTestVisible="False"/>
+                                </Grid>
+                            </Border>
+                            <Popup x:Name="Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Slide">
+                                <Border x:Name="DropDownBorder"
+                                        Background="#1C1C1C"
+                                        BorderBrush="#333333"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        MinWidth="{TemplateBinding ActualWidth}">
+                                    <ScrollViewer MaxHeight="200"
+                                                  VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="MainBorder" Property="BorderBrush" Value="#555555"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Resources>
+                <!-- Dropdown popup styling -->
+                <Style TargetType="ComboBoxItem">
+                    <Setter Property="Background" Value="#1C1C1C"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                    <Setter Property="Padding" Value="12,10"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ComboBoxItem">
+                                <Border Background="{TemplateBinding Background}"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter Content="{TemplateBinding Content}"
+                                                      TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#2E4A70"/>
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#4A86D4"/>
+                                        <Setter Property="Foreground" Value="#FFFFFF"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Style.Resources>
         </Style>
 
         <!-- ToggleButton that looks like ToolbarButton but shows "active" state -->
@@ -140,15 +251,15 @@
                               Width="160"
                               Height="36"
                               Margin="0,0,8,0"
-                              Background="#1C1C1C"
-                              Foreground="#EAEAEA"
-                              BorderBrush="#333333"
-                              FontSize="12"
-                              FontWeight="SemiBold"
-                              VerticalContentAlignment="Center"
+                              Style="{StaticResource DarkComboBox}"
                               ToolTip="Speech recognition engine (change on the fly)"/>
+                    <ToggleButton Content="1 Sentence"
+                                  IsChecked="{Binding SingleSentenceMode}"
+                                  ToolTip="Show only current sentence, updating in real-time"
+                                  Style="{StaticResource ToolbarToggle}"/>
                     <ToggleButton Content="Append"
                                   IsChecked="{Binding AppendMode}"
+                                  IsEnabled="{Binding SingleSentenceMode, Converter={StaticResource InverseBool}}"
                                   ToolTip="Append each final result (vs replace)"
                                   Style="{StaticResource ToolbarToggle}"/>
                     <ToggleButton Content="Always on Top"
