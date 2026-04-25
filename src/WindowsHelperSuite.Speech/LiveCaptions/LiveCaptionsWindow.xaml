@@ -1,0 +1,399 @@
+<Window x:Class="WindowsHelperSuite.Speech.LiveCaptions.LiveCaptionsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:primitives="clr-namespace:System.Windows.Controls.Primitives;assembly=PresentationFramework"
+        xmlns:local="clr-namespace:WindowsHelperSuite.Speech.LiveCaptions"
+        mc:Ignorable="d"
+        Title="Live Captions — Windows Helper Suite"
+        Height="540" Width="960"
+        MinHeight="360" MinWidth="600"
+        WindowStartupLocation="CenterScreen"
+        Background="#000000"
+        Foreground="#FFFFFF"
+        Topmost="{Binding AlwaysOnTop}">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <local:InverseBoolConverter x:Key="InverseBool"/>
+
+        <!-- Base filled toolbar button -->
+        <Style x:Key="ToolbarButton" TargetType="Button">
+            <Setter Property="Padding" Value="18,8"/>
+            <Setter Property="Margin" Value="0,0,10,0"/>
+            <Setter Property="Background" Value="#1C1C1C"/>
+            <Setter Property="Foreground" Value="#EAEAEA"/>
+            <Setter Property="BorderBrush" Value="#333333"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#2A2A2A"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#555555"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bd" Property="Background" Value="#121212"/>
+                                <Setter Property="Foreground" Value="#555555"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ComboBox style for dark theme with readable text -->
+        <Style x:Key="DarkComboBox" TargetType="ComboBox">
+            <Setter Property="Background" Value="#1C1C1C"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="BorderBrush" Value="#333333"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Padding" Value="8,0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="MainBorder"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="6">
+                                <Grid>
+                                    <ToggleButton x:Name="ToggleButton"
+                                                  Background="Transparent"
+                                                  BorderThickness="0"
+                                                  IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                                  ClickMode="Press"/>
+                                    <ContentPresenter x:Name="ContentSite"
+                                                      Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                                      HorizontalAlignment="Left"
+                                                      VerticalAlignment="Center"
+                                                      Margin="12,0,28,0"
+                                                      IsHitTestVisible="False">
+                                        <ContentPresenter.Resources>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                            </Style>
+                                        </ContentPresenter.Resources>
+                                    </ContentPresenter>
+                                    <TextBlock Text="▼" 
+                                               HorizontalAlignment="Right"
+                                               VerticalAlignment="Center"
+                                               Foreground="#AAAAAA"
+                                               Margin="0,0,12,0"
+                                               FontSize="10"
+                                               IsHitTestVisible="False"/>
+                                </Grid>
+                            </Border>
+                            <Popup x:Name="Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Slide">
+                                <Border x:Name="DropDownBorder"
+                                        Background="#1C1C1C"
+                                        BorderBrush="#333333"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        MinWidth="{TemplateBinding ActualWidth}">
+                                    <ScrollViewer MaxHeight="200"
+                                                  VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="MainBorder" Property="BorderBrush" Value="#555555"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Resources>
+                <!-- Dropdown popup styling -->
+                <Style TargetType="ComboBoxItem">
+                    <Setter Property="Background" Value="#1C1C1C"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                    <Setter Property="Padding" Value="12,10"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ComboBoxItem">
+                                <Border Background="{TemplateBinding Background}"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter Content="{TemplateBinding Content}"
+                                                      TextBlock.Foreground="{TemplateBinding Foreground}"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#2E4A70"/>
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#4A86D4"/>
+                                        <Setter Property="Foreground" Value="#FFFFFF"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Style.Resources>
+        </Style>
+
+        <!-- ToggleButton that looks like ToolbarButton but shows "active" state -->
+        <Style x:Key="ToolbarToggle" TargetType="ToggleButton">
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+            <Setter Property="Background" Value="#1C1C1C"/>
+            <Setter Property="Foreground" Value="#EAEAEA"/>
+            <Setter Property="BorderBrush" Value="#333333"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#2A2A2A"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#555555"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#2E4A70"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#4A86D4"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Window.InputBindings>
+        <KeyBinding Key="F11" Command="{Binding ToggleFullscreenCommand}"/>
+        <KeyBinding Key="Escape" Command="{Binding ToggleFullscreenCommand}"/>
+    </Window.InputBindings>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition x:Name="ToolbarRow" Height="Auto"/>
+            <RowDefinition x:Name="ErrorRow" Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition x:Name="StatusBarRow" Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <Border x:Name="ToolbarBorder"
+                Grid.Row="0"
+                Background="#0A0A0A"
+                BorderBrush="#222222"
+                BorderThickness="0,0,0,1"
+                Padding="16,12">
+            <DockPanel LastChildFill="False">
+                <!-- Primary actions -->
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <Button Content="Start Listening"
+                            Command="{Binding StartCommand}"
+                            Style="{StaticResource ToolbarButton}"/>
+                    <Button Content="Stop"
+                            Command="{Binding StopCommand}"
+                            Style="{StaticResource ToolbarButton}"/>
+                    <Button Content="Clear"
+                            Command="{Binding ClearCommand}"
+                            Style="{StaticResource ToolbarButton}"/>
+                    <Button Content="Copy"
+                            Command="{Binding CopyCommand}"
+                            Style="{StaticResource ToolbarButton}"/>
+                    <Button Content="Save"
+                            Command="{Binding SaveCommand}"
+                            Style="{StaticResource ToolbarButton}"/>
+                </StackPanel>
+
+                <!-- Engine selector (center/right) -->
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" Margin="0,0,12,0">
+                    <ComboBox ItemsSource="{Binding AvailableEngines}"
+                              SelectedItem="{Binding SelectedEngine}"
+                              DisplayMemberPath="Name"
+                              Width="160"
+                              Height="36"
+                              Margin="0,0,8,0"
+                              Style="{StaticResource DarkComboBox}"
+                              ToolTip="Speech recognition engine (change on the fly)"/>
+                    <ToggleButton Content="1 Sentence"
+                                  IsChecked="{Binding SingleSentenceMode}"
+                                  ToolTip="Show only current sentence, updating in real-time"
+                                  Style="{StaticResource ToolbarToggle}"/>
+                    <ToggleButton Content="Append"
+                                  IsChecked="{Binding AppendMode}"
+                                  IsEnabled="{Binding SingleSentenceMode, Converter={StaticResource InverseBool}}"
+                                  ToolTip="Append each final result (vs replace)"
+                                  Style="{StaticResource ToolbarToggle}"/>
+                    <ToggleButton Content="Always on Top"
+                                  IsChecked="{Binding AlwaysOnTop}"
+                                  ToolTip="Keep this window above all others"
+                                  Style="{StaticResource ToolbarToggle}"/>
+                    <ToggleButton Content="Fullscreen"
+                                  IsChecked="{Binding IsFullscreen}"
+                                  ToolTip="F11 / Esc toggles"
+                                  Style="{StaticResource ToolbarToggle}"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Persistent error banner (shown only when HasError is true) -->
+        <Border x:Name="ErrorBanner"
+                Grid.Row="1"
+                Background="#4A1212"
+                BorderBrush="#8B2C2C"
+                BorderThickness="0,0,0,1"
+                Padding="16,10"
+                Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+            <DockPanel LastChildFill="True">
+                <Button Content="✕"
+                        DockPanel.Dock="Right"
+                        Command="{Binding DismissErrorCommand}"
+                        ToolTip="Dismiss"
+                        Width="28" Height="28"
+                        Margin="12,0,0,0"
+                        Padding="0"
+                        Background="Transparent"
+                        Foreground="#FFE5E5"
+                        BorderBrush="#8B2C2C"
+                        BorderThickness="1"
+                        FontSize="12"
+                        FontWeight="Bold"
+                        Cursor="Hand"
+                        VerticalAlignment="Center"/>
+                <TextBlock Text="{Binding ErrorText}"
+                           Foreground="#FFE5E5"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"
+                           VerticalAlignment="Center"/>
+            </DockPanel>
+        </Border>
+
+        <!-- Giant live caption area -->
+        <ScrollViewer x:Name="CaptionScroll"
+                      Grid.Row="2"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      Padding="36,24">
+            <TextBlock Text="{Binding DisplayText}"
+                       FontSize="{Binding CaptionFontSize}"
+                       FontFamily="Segoe UI"
+                       FontWeight="SemiBold"
+                       Foreground="#FFFFFF"
+                       TextWrapping="Wrap"
+                       LineHeight="1.2"/>
+        </ScrollViewer>
+
+        <!-- Status bar + font slider -->
+        <Border x:Name="StatusBarBorder"
+                Grid.Row="3"
+                Background="#0A0A0A"
+                BorderBrush="#222222"
+                BorderThickness="0,1,0,0"
+                Padding="16,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Ellipse Grid.Column="0"
+                         Width="10" Height="10"
+                         Margin="0,0,8,0"
+                         VerticalAlignment="Center">
+                    <Ellipse.Style>
+                        <Style TargetType="Ellipse">
+                            <Setter Property="Fill" Value="#5A5A5A"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsListening}" Value="True">
+                                    <Setter Property="Fill" Value="#FF3B3B"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Ellipse.Style>
+                </Ellipse>
+
+                <TextBlock Grid.Column="1"
+                           Text="{Binding StatusText}"
+                           Foreground="#BBBBBB"
+                           FontSize="12"
+                           VerticalAlignment="Center"/>
+
+                <!-- Font size slider -->
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="0,0,20,0">
+                    <TextBlock Text="Aa"
+                               Foreground="#888888"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="0,0,6,0"/>
+                    <Slider Width="160"
+                            Minimum="48"
+                            Maximum="200"
+                            Value="{Binding CaptionFontSize, Mode=TwoWay}"
+                            VerticalAlignment="Center"
+                            TickFrequency="16"
+                            IsSnapToTickEnabled="False"
+                            Foreground="#BBBBBB"/>
+                    <TextBlock Text="{Binding CaptionFontSize, StringFormat={}{0:F0}pt}"
+                               Foreground="#888888"
+                               FontSize="12"
+                               Width="52"
+                               TextAlignment="Right"
+                               VerticalAlignment="Center"
+                               Margin="6,0,0,0"/>
+                </StackPanel>
+
+                <TextBlock Grid.Column="3"
+                           Foreground="#888888"
+                           FontSize="12"
+                           VerticalAlignment="Center">
+                    <Run Text="Engine: "/>
+                    <Run Text="{Binding EngineText}" FontWeight="SemiBold"/>
+                </TextBlock>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

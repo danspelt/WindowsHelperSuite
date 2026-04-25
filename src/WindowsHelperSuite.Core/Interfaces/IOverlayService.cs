@@ -22,6 +22,8 @@ public interface IOverlayService
     event EventHandler<int>? SuggestionSelected;
     /// <summary>Fired when keyboard highlight moves to a suggestion; string is display text.</summary>
     event EventHandler<string?>? SuggestionHighlightChanged;
+    /// <summary>Fired when the user clicks the overlay's close (✕) button. Consumers should put the writer to sleep.</summary>
+    event EventHandler? CloseRequested;
 
     /// <summary>Temporarily suppress the writer (no overlay shown) for the given duration.</summary>
     void SuppressFor(TimeSpan duration);

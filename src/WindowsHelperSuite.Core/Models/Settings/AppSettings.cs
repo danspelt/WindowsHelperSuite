@@ -14,4 +14,6 @@ public class AppSettings
     public MongoVocabularySettings MongoVocabulary { get; set; } = new();
 
     public VoiceBridgeSettings VoiceBridge { get; set; } = new();
+
+    public LiveCaptionSettings LiveCaptions { get; set; } = new();
 }

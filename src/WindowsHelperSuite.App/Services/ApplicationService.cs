@@ -27,6 +27,7 @@ using WindowsHelperSuite.Hotkeys.Services;
 using WindowsHelperSuite.Overlay.Services;
 using WindowsHelperSuite.Input.Services;
 using WindowsHelperSuite.Prediction.Services;
+using WindowsHelperSuite.Speech.LiveCaptions;
 using WindowsHelperSuite.Speech.Services;
 using VoiceBridge.Contracts;
 using WindowsHelperSuite.Writer.Llm;
@@ -70,6 +71,7 @@ public class ApplicationService : IDisposable
     private readonly IConversationStore _conversationStore;
     private readonly ChatOptions _chatOptions;
     private ChatWindow? _chatWindow;
+    private LiveCaptionsWindow? _liveCaptionsWindow;
     private CancellationTokenSource? _highlightSpeechCts;
     private VoiceBridgeListener? _voiceBridgeListener;
 
@@ -101,7 +103,7 @@ public class ApplicationService : IDisposable
         _conversationStore = new JsonConversationStore(_loggingService);
         _aiSuggestionService = new AiSuggestionService(_loggingService, BuildOverlayAiSettings);
 
-        _trayIconService = new TrayIconService(_loggingService, _settingsService, ReloadHotkeys, OpenChat);
+        _trayIconService = new TrayIconService(_loggingService, _settingsService, ReloadHotkeys, OpenChat, OpenLiveCaptions);
         _hotkeyService = new HotkeyService(_loggingService);
         _overlayService = new OverlayService(_loggingService, _settingsService);
         _trayIconService.OverlayService = _overlayService;
@@ -148,6 +150,7 @@ public class ApplicationService : IDisposable
         // Wire up suggestion selection to text injection
         _overlayService.SuggestionSelected += OnSuggestionSelected;
         _overlayService.SuggestionHighlightChanged += OnSuggestionHighlightChanged;
+        _overlayService.CloseRequested += OnOverlayCloseRequested;
         _inputService.TryGetHighlightedSuggestionSlot = () => _overlayService.GetHighlightedSuggestionSlot();
 
         WireInputToOverlay();
@@ -952,6 +955,31 @@ public class ApplicationService : IDisposable
         });
     }
 
+    /// <summary>
+    /// User clicked the ✕ close button on the overlay. Put the writer to sleep so
+    /// keystrokes no longer run through the prediction pipeline. Only the WakeWriter
+    /// hotkey can wake it back up.
+    /// </summary>
+    private void OnOverlayCloseRequested(object? sender, EventArgs e)
+    {
+        DeferWriterUi(() =>
+        {
+            _speechService.Stop();
+            HideOverlay();
+            lock (_writerStateLock)
+            {
+                _currentWord = string.Empty;
+                _currentSuggestions = [];
+            }
+
+            _hasValidTextInput = false;
+            _previousWord = string.Empty;
+            _recentWords.Clear();
+            _writerAwake = false;
+            _loggingService.Information("Writer put to sleep via close button — only WakeWriter hotkey will wake it");
+        });
+    }
+
     private void OnSuggestionSelected(object? sender, int slot)
     {
         // Legacy path — kept for overlay click selection if ever added
@@ -1086,6 +1114,9 @@ public class ApplicationService : IDisposable
         {
             DeferWriterUi(() =>
             {
+                // Clear any close-button suppression so the overlay can be shown again.
+                _overlayService.ClearSuppression();
+
                 if (_writerAwake)
                 {
                     _loggingService.Debug("WakeWriter pressed but writer already awake — ignored");
@@ -1119,6 +1150,8 @@ public class ApplicationService : IDisposable
 
         _hotkeyService.RegisterAction("OpenModeMenu", ShowModeMenu);
 
+        _hotkeyService.RegisterAction("OpenLiveCaptions", OpenLiveCaptions);
+
         _hotkeyService.RegisterAction("OpenSettings", () =>
         {
             _trayIconService.ShowSettings();
@@ -1150,14 +1183,15 @@ public class ApplicationService : IDisposable
             _hotkeyService.RegisterHotkey("VolumeUp", "Ctrl+Shift+Up");
             _hotkeyService.RegisterHotkey("VolumeDown", "Ctrl+Shift+Down");
             _hotkeyService.RegisterHotkey("VolumeMute", "Ctrl+Shift+M");
-            _hotkeyService.RegisterHotkey("WriterRefresh", "`");
+            _hotkeyService.RegisterHotkey("WriterRefresh", "Ctrl+Shift+R");
             _hotkeyService.RegisterHotkey("ToggleOverlay", "Ctrl+Shift+O");
             _hotkeyService.RegisterHotkey("PauseWriter", "Ctrl+Shift+P");
-            _hotkeyService.RegisterHotkey("WakeWriter", "Ctrl+Shift+W");
+            _hotkeyService.RegisterHotkey("WakeWriter", "`");
             _hotkeyService.RegisterHotkey("AddToWordBank", "Ctrl+`");
             _hotkeyService.RegisterHotkey("AddPhraseToWordBank", "Ctrl+Shift+`");
             _hotkeyService.RegisterHotkey("FixClipboardCapitalization", "Ctrl+Shift+C");
             _hotkeyService.RegisterHotkey("OpenModeMenu", _settingsService.Settings.ModeSystem.MenuHotkeyGesture, true);
+            _hotkeyService.RegisterHotkey("OpenLiveCaptions", "Ctrl+Shift+L");
             _hotkeyService.RegisterHotkey("OpenSettings", "Ctrl+F3");
             _hotkeyService.RegisterHotkey("OpenStillSpace", "Ctrl+F4", true);
 
@@ -1196,8 +1230,8 @@ public class ApplicationService : IDisposable
                 string.Equals(b.ActionName, "WakeWriter", StringComparison.OrdinalIgnoreCase));
             if (wakeDef == null || string.IsNullOrWhiteSpace(wakeDef.Gesture) || !wakeDef.Enabled)
             {
-                _hotkeyService.RegisterHotkey("WakeWriter", "Ctrl+Shift+W");
-                _loggingService.Information("WakeWriter bound to default Ctrl+Shift+W (no user binding found)");
+                _hotkeyService.RegisterHotkey("WakeWriter", "`");
+                _loggingService.Information("WakeWriter bound to default ` (no user binding found)");
             }
         }
     }
@@ -1206,7 +1240,7 @@ public class ApplicationService : IDisposable
     [
         "VolumeUp", "VolumeDown", "VolumeMute", "WriterRefresh",
         "ToggleOverlay", "PauseWriter", "WakeWriter", "AddToWordBank", "AddPhraseToWordBank",
-        "FixClipboardCapitalization", "OpenModeMenu", "OpenSettings", "OpenStillSpace",
+        "FixClipboardCapitalization", "OpenModeMenu", "OpenLiveCaptions", "OpenSettings", "OpenStillSpace",
     ];
 
     private void ReloadHotkeys()
@@ -1770,6 +1804,41 @@ public class ApplicationService : IDisposable
             _chatWindow = new ChatWindow(vm);
             _chatWindow.Closed += (_, _) => _chatWindow = null;
             _chatWindow.Show();
+        });
+    }
+
+    private void OpenLiveCaptions()
+    {
+        _loggingService.Information("Opening Live Captions window");
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        {
+            if (_liveCaptionsWindow != null && _liveCaptionsWindow.IsVisible)
+            {
+                _liveCaptionsWindow.Activate();
+                return;
+            }
+
+            // Fresh composite service per-open so engine selection (Whisper/Azure/WinRT) re-evaluates.
+            var liveSpeech = new CompositeLiveSpeechService(
+                () => _settingsService.Settings.Speech,
+                () => _settingsService.Settings.LiveCaptions,
+                _loggingService);
+
+            LiveCaptionsWindow? window = null;
+            var vm = new LiveCaptionsViewModel(
+                liveSpeech,
+                _loggingService,
+                _settingsService,
+                onFullscreenRequested: on => window?.SetFullscreen(on));
+
+            window = new LiveCaptionsWindow(vm);
+            _liveCaptionsWindow = window;
+            _liveCaptionsWindow.Closed += (_, _) =>
+            {
+                liveSpeech.Dispose();
+                _liveCaptionsWindow = null;
+            };
+            _liveCaptionsWindow.Show();
         });
     }
 
