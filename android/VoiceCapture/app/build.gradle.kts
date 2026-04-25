@@ -54,4 +54,7 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // OkHttp for OpenAI Whisper API
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }

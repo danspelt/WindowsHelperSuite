@@ -26,6 +26,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -83,7 +84,7 @@ fun VoiceCaptureScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
                 Text(
-                    text = "Voice Capture",
+                    text = "Live Captions",
                     color = CaptionYellow,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
@@ -117,10 +118,22 @@ fun VoiceCaptureScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text("Append mode", color = Color(0xFFCCCCCC))
+                    Text("1 Sentence mode", color = Color(0xFFCCCCCC))
+                    Switch(
+                        checked = state.singleSentenceMode,
+                        onCheckedChange = { viewModel.setSingleSentenceMode(it) },
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Append mode", color = Color(0xFFCCCCCC), modifier = Modifier.alpha(if (state.singleSentenceMode) 0.5f else 1f))
                     Switch(
                         checked = state.appendMode,
                         onCheckedChange = { viewModel.setAppendMode(it) },
+                        enabled = !state.singleSentenceMode,
                     )
                 }
                 Row(

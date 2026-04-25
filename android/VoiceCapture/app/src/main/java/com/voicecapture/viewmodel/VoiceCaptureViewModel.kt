@@ -33,26 +33,44 @@ class VoiceCaptureViewModel(
             context = application.applicationContext,
             onPartial = { text ->
                 _uiState.update { state ->
-                    state.copy(partialText = text).let { s ->
+                    // In single sentence mode, clear final transcript so we only show current utterance
+                    val newFinal = if (state.singleSentenceMode) "" else state.finalTranscript
+                    state.copy(
+                        partialText = text,
+                        finalTranscript = newFinal
+                    ).let { s ->
                         s.copy(displayText = recomputeDisplay(s))
                     }
                 }
             },
             onFinal = { text ->
                 _uiState.update { state ->
-                    val prior = state.finalTranscript
-                    val merged =
-                        if (state.appendMode) {
-                            if (prior.isBlank()) text else "$prior $text"
-                        } else {
-                            text
+                    val next = when {
+                        state.singleSentenceMode -> {
+                            // Single sentence mode: show this final result, discard previous
+                            state.copy(
+                                partialText = "",
+                                finalTranscript = text,
+                                statusText = "Recognized",
+                            )
                         }
-                    val next =
-                        state.copy(
-                            partialText = "",
-                            finalTranscript = merged,
-                            statusText = "Recognized",
-                        )
+                        state.appendMode -> {
+                            val prior = state.finalTranscript
+                            val merged = if (prior.isBlank()) text else "$prior $text"
+                            state.copy(
+                                partialText = "",
+                                finalTranscript = merged,
+                                statusText = "Recognized",
+                            )
+                        }
+                        else -> {
+                            state.copy(
+                                partialText = "",
+                                finalTranscript = text,
+                                statusText = "Recognized",
+                            )
+                        }
+                    }
                     next.copy(displayText = recomputeDisplay(next))
                 }
             },
@@ -81,8 +99,12 @@ class VoiceCaptureViewModel(
                     val next =
                         curr.copy(
                             appendMode = s.appendMode,
+                            singleSentenceMode = s.singleSentenceMode,
                             fontScaleSp = s.fontScaleSp.coerceIn(32f, 96f),
                             keepScreenAwake = s.keepScreenAwake,
+                            useOpenAiWhisper = s.useOpenAiWhisper,
+                            openAiApiKey = s.openAiApiKey,
+                            openAiWhisperPrompt = s.openAiWhisperPrompt,
                         )
                     next.copy(displayText = recomputeDisplay(next))
                 }
@@ -149,6 +171,12 @@ class VoiceCaptureViewModel(
     fun setAppendMode(enabled: Boolean) {
         viewModelScope.launch {
             settingsRepository.setAppendMode(enabled)
+        }
+    }
+
+    fun setSingleSentenceMode(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.setSingleSentenceMode(enabled)
         }
     }
 
