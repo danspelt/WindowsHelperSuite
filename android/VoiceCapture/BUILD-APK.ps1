@@ -26,8 +26,11 @@ if (-not $java) {
     exit 1
 }
 
-$javaVersion = & java -version 2>&1 | Select-String -Pattern '"(\d+)' | ForEach-Object { $_.Matches.Groups[1].Value }
-Write-Host "Java version: $javaVersion" -ForegroundColor Green
+# java -version outputs to stderr, so we need to capture it without error
+$ErrorActionPreference = "Continue"
+$javaVersionOutput = cmd /c "java -version 2>&1" | Select-String -Pattern '"(\d+)' | ForEach-Object { $_.Matches.Groups[1].Value } | Select-Object -First 1
+$ErrorActionPreference = "Stop"
+Write-Host "Java version: $javaVersionOutput" -ForegroundColor Green
 
 # Download Gradle Wrapper if not present
 $wrapperJar = Join-Path $projectRoot "gradle\wrapper\gradle-wrapper.jar"
@@ -44,12 +47,22 @@ if (-not (Test-Path $wrapperJar) -or -not (Test-Path $gradlewBat)) {
     
     # Download gradle wrapper files
     try {
-        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gradle/gradle/v8.9.0/gradle/wrapper/gradle-wrapper.jar" -OutFile $wrapperJar -UseBasicParsing
-        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gradle/gradle/v8.9.0/gradle/wrapper/gradlew.bat" -OutFile $gradlewBat -UseBasicParsing
+        Invoke-WebRequest -Uri "https://services.gradle.org/distributions/gradle-8.9-bin.zip" -OutFile "$projectRoot\gradle-8.9-bin.zip" -UseBasicParsing
         
-        # Make gradlew executable (for WSL/Git Bash)
-        $gradlew = Join-Path $projectRoot "gradlew"
-        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/gradle/gradle/v8.9.0/gradle/wrapper/gradlew" -OutFile $gradlew -UseBasicParsing
+        # Extract and setup wrapper
+        Expand-Archive -Path "$projectRoot\gradle-8.9-bin.zip" -DestinationPath "$projectRoot\gradle-temp" -Force
+        $gradleHome = Join-Path $projectRoot "gradle-temp\gradle-8.9"
+        $env:GRADLE_HOME = $gradleHome
+        $env:PATH = "$gradleHome\bin;$env:PATH"
+        
+        # Generate wrapper using gradle
+        Push-Location $projectRoot
+        & "$gradleHome\bin\gradle.bat" wrapper --gradle-version 8.9
+        Pop-Location
+        
+        # Cleanup
+        Remove-Item "$projectRoot\gradle-8.9-bin.zip" -Force -ErrorAction SilentlyContinue
+        Remove-Item "$projectRoot\gradle-temp" -Recurse -Force -ErrorAction SilentlyContinue
         
         Write-Host "Gradle Wrapper downloaded successfully!" -ForegroundColor Green
     }
