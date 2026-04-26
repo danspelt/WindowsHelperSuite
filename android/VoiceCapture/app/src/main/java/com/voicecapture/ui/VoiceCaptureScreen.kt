@@ -15,6 +15,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -95,6 +96,62 @@ fun VoiceCaptureScreen(
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
                 )
+
+                Text(
+                    text = "Bridge (${if (state.bridgeConnected) "connected" else "disconnected"}): ${state.bridgeStatus}",
+                    color = Color(0xFFAAAAAA),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+
+                OutlinedTextField(
+                    value = state.bridgeHost,
+                    onValueChange = { viewModel.setBridgeHost(it) },
+                    label = { Text("PC host (IP)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = state.bridgePort.toString(),
+                    onValueChange = { v -> viewModel.setBridgePort(v.toIntOrNull() ?: state.bridgePort) },
+                    label = { Text("Port") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+
+                OutlinedTextField(
+                    value = state.bridgeToken,
+                    onValueChange = { viewModel.setBridgeToken(it) },
+                    label = { Text("Token") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Auto-connect", color = Color(0xFFCCCCCC))
+                    Switch(
+                        checked = state.bridgeAutoConnect,
+                        onCheckedChange = { viewModel.setBridgeAutoConnect(it) },
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    CaptionButton(
+                        text = if (state.bridgeConnected) "Disconnect" else "Connect",
+                        onClick = { if (state.bridgeConnected) viewModel.disconnectBridge() else viewModel.connectBridge() },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 if (!state.micPermissionGranted) {
                     Text(

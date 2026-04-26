@@ -14,4 +14,10 @@ data class CaptionUiState(
     val useOpenAiWhisper: Boolean = false,
     val openAiApiKey: String = "",
     val openAiWhisperPrompt: String = "The speaker has cerebral palsy with dysarthric speech. Transcribe faithfully and prefer likely intended words.",
+    val bridgeHost: String = "",
+    val bridgePort: Int = 53742,
+    val bridgeToken: String = "",
+    val bridgeAutoConnect: Boolean = false,
+    val bridgeConnected: Boolean = false,
+    val bridgeStatus: String = "Disconnected",
 )

@@ -194,13 +194,39 @@ public class ApplicationService : IDisposable
             };
         });
         _voiceBridgeListener.MessageReceived += OnVoiceBridgeMessageReceived;
+        _voiceBridgeListener.ConnectionChanged += OnVoiceBridgeConnectionChanged;
         _voiceBridgeListener.Start();
+    }
+
+    private void OnVoiceBridgeConnectionChanged(bool connected, string? sessionId, string? deviceId)
+    {
+        _loggingService.Information(
+            $"Voice Bridge {(connected ? "connected" : "disconnected")}: session={sessionId} deviceId={deviceId}");
     }
 
     private void OnVoiceBridgeMessageReceived(VoiceBridgeEnvelope env)
     {
         _loggingService.Debug(
             $"Voice Bridge message: type={env.Type} session={env.SessionId} textLen={env.Text?.Length ?? 0}");
+
+        if (string.Equals(env.Type, VoiceBridgeMessageTypes.AudioChunk, StringComparison.OrdinalIgnoreCase))
+        {
+            var bytes = 0;
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(env.AudioBase64))
+                {
+                    bytes = Convert.FromBase64String(env.AudioBase64).Length;
+                }
+            }
+            catch
+            {
+                bytes = 0;
+            }
+
+            _loggingService.Information(
+                $"Voice Bridge audio: seq={env.Seq} format={env.AudioFormat} sr={env.SampleRate} ch={env.Channels} bytes={bytes}");
+        }
     }
 
     public void Run()
@@ -1884,6 +1910,7 @@ public class ApplicationService : IDisposable
         if (_voiceBridgeListener != null)
         {
             _voiceBridgeListener.MessageReceived -= OnVoiceBridgeMessageReceived;
+            _voiceBridgeListener.ConnectionChanged -= OnVoiceBridgeConnectionChanged;
             _voiceBridgeListener.Dispose();
             _voiceBridgeListener = null;
         }

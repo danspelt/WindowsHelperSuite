@@ -6,4 +6,11 @@ The Android **Voice Bridge** app should live in a **separate repository**. This 
 - `type` must be one of the string constants in `VoiceBridgeMessageTypes`.
 - **V1 pairing**: connect to `ws://<pc-host>:<port>/ws?token=<sharedToken>` (token also appears in `settings.json` under `voiceBridge.sharedToken` once the listener has started once).
 
+## Bridge features (V1)
+
+- **Session**: `hello` / `auth_challenge` / `auth_response`
+- **Text**: `text_send` / `text_received`
+- **Commands**: `command` / `command_ack`
+- **Optional audio**: `audio_chunk` (base64 PCM16)
+
 When you add fields, extend `VoiceBridgeEnvelope` and keep Android deserializers tolerant of unknown keys.

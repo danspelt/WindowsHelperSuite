@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Collections.Concurrent;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -29,6 +30,7 @@ public sealed class VoiceBridgeListener : IDisposable, IAsyncDisposable
     private readonly Func<VoiceBridgeConnectionOptions> _getOptions;
     private CancellationTokenSource? _cts;
     private Task? _runTask;
+    private readonly ConcurrentDictionary<string, BridgeConnection> _connections = new(StringComparer.OrdinalIgnoreCase);
 
     public VoiceBridgeListener(ILoggingService logging, Func<VoiceBridgeConnectionOptions> getOptions)
     {
@@ -38,6 +40,9 @@ public sealed class VoiceBridgeListener : IDisposable, IAsyncDisposable
 
     /// <summary>Raised for each inbound text frame after pairing (excluding ping handling).</summary>
     public event Action<VoiceBridgeEnvelope>? MessageReceived;
+
+    /// <summary>Raised when a client connects or disconnects.</summary>
+    public event Action<bool, string?, string?>? ConnectionChanged;
 
     public void Start()
     {
@@ -120,6 +125,21 @@ public sealed class VoiceBridgeListener : IDisposable, IAsyncDisposable
 
     private async Task HandleSocketAsync(WebSocket socket, string sharedToken, CancellationToken cancellationToken)
     {
+        var sessionId = Guid.NewGuid().ToString("N");
+        var conn = new BridgeConnection(sessionId, socket);
+        _connections[sessionId] = conn;
+        ConnectionChanged?.Invoke(true, sessionId, null);
+
+        // Challenge/response auth (in addition to the ws?token= gate) to discourage accidental LAN connects.
+        conn.Nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+        await SendJsonAsync(socket, new VoiceBridgeEnvelope
+        {
+            Type = VoiceBridgeMessageTypes.AuthChallenge,
+            SessionId = sessionId,
+            Nonce = conn.Nonce,
+            Timestamp = DateTime.UtcNow
+        }, cancellationToken);
+
         var buffer = new byte[64 * 1024];
         while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
         {
@@ -193,13 +213,60 @@ public sealed class VoiceBridgeListener : IDisposable, IAsyncDisposable
 
                     break;
 
+                case VoiceBridgeMessageTypes.Hello:
+                    conn.DeviceId = env.DeviceId;
+                    conn.AppVersion = env.AppVersion;
+                    ConnectionChanged?.Invoke(true, sessionId, conn.DeviceId);
+                    _logging.Information($"Voice Bridge: hello deviceId={conn.DeviceId} appVersion={conn.AppVersion}");
+                    break;
+
+                case VoiceBridgeMessageTypes.AuthResponse:
+                    if (conn.Authenticated)
+                    {
+                        break;
+                    }
+                    if (!AuthOk(conn.Nonce, env.Hmac, sharedToken))
+                    {
+                        await SendJsonAsync(socket, new VoiceBridgeEnvelope
+                        {
+                            Type = VoiceBridgeMessageTypes.PairReject,
+                            SessionId = sessionId,
+                            Result = "auth_failed",
+                            Timestamp = DateTime.UtcNow
+                        }, cancellationToken);
+                        await socket.CloseAsync(WebSocketCloseStatus.PolicyViolation, "auth_failed", CancellationToken.None);
+                        return;
+                    }
+
+                    conn.Authenticated = true;
+                    await SendJsonAsync(socket, new VoiceBridgeEnvelope
+                    {
+                        Type = VoiceBridgeMessageTypes.AuthResponse,
+                        SessionId = sessionId,
+                        Result = "ok",
+                        Timestamp = DateTime.UtcNow
+                    }, cancellationToken);
+                    _logging.Information($"Voice Bridge: authenticated session={sessionId} deviceId={conn.DeviceId}");
+                    break;
+
                 default:
+                    if (!conn.Authenticated)
+                    {
+                        // Ignore anything before auth completes.
+                        _logging.Debug($"Voice Bridge: ignored {env.Type} before auth (session={sessionId})");
+                        break;
+                    }
+
+                    env.SessionId ??= sessionId;
                     MessageReceived?.Invoke(env);
                     _logging.Information(
                         $"Voice Bridge ← {env.Type} session={env.SessionId} textLen={env.Text?.Length ?? 0}");
                     break;
             }
         }
+
+        _connections.TryRemove(sessionId, out _);
+        ConnectionChanged?.Invoke(false, sessionId, conn.DeviceId);
     }
 
     private async Task SendJsonAsync(WebSocket socket, VoiceBridgeEnvelope payload, CancellationToken cancellationToken)
@@ -218,6 +285,72 @@ public sealed class VoiceBridgeListener : IDisposable, IAsyncDisposable
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(a),
             Encoding.UTF8.GetBytes(b));
+    }
+
+    private static bool AuthOk(string? nonceHex, string? hmacHex, string sharedToken)
+    {
+        if (string.IsNullOrWhiteSpace(nonceHex) || string.IsNullOrWhiteSpace(hmacHex))
+        {
+            return false;
+        }
+
+        byte[] nonce;
+        byte[] provided;
+        try
+        {
+            nonce = Convert.FromHexString(nonceHex);
+            provided = Convert.FromHexString(hmacHex);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        var key = Encoding.UTF8.GetBytes(sharedToken);
+        var expected = HMACSHA256.HashData(key, nonce);
+        return provided.Length == expected.Length && CryptographicOperations.FixedTimeEquals(provided, expected);
+    }
+
+    public async Task<int> SendToAllAsync(VoiceBridgeEnvelope payload, CancellationToken cancellationToken)
+    {
+        var sent = 0;
+        foreach (var kvp in _connections)
+        {
+            var c = kvp.Value;
+            if (!c.Authenticated || c.Socket.State != WebSocketState.Open)
+            {
+                continue;
+            }
+
+            try
+            {
+                payload.SessionId ??= c.SessionId;
+                await SendJsonAsync(c.Socket, payload, cancellationToken);
+                sent++;
+            }
+            catch (Exception ex)
+            {
+                _logging.Debug($"Voice Bridge send failed (session={c.SessionId}): {ex.Message}");
+            }
+        }
+
+        return sent;
+    }
+
+    private sealed class BridgeConnection
+    {
+        public BridgeConnection(string sessionId, WebSocket socket)
+        {
+            SessionId = sessionId;
+            Socket = socket;
+        }
+
+        public string SessionId { get; }
+        public WebSocket Socket { get; }
+        public bool Authenticated { get; set; }
+        public string? Nonce { get; set; }
+        public string? DeviceId { get; set; }
+        public string? AppVersion { get; set; }
     }
 
     public void Dispose() =>
