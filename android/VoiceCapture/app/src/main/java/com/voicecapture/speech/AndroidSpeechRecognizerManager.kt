@@ -37,11 +37,7 @@ class AndroidSpeechRecognizerManager(
             return
         }
 
-        val appContext = context.applicationContext
-        recognizer = SpeechRecognizer.createSpeechRecognizer(appContext).apply {
-            setRecognitionListener(buildListener())
-            startListening(buildIntent())
-        }
+        createRecognizerAndStart()
     }
 
     fun stop() {
@@ -64,6 +60,33 @@ class AndroidSpeechRecognizerManager(
         onListeningStateChanged(false)
     }
 
+    private fun createRecognizerAndStart() {
+        val appContext = context.applicationContext
+        recognizer =
+            SpeechRecognizer.createSpeechRecognizer(appContext).apply {
+                setRecognitionListener(buildListener())
+                startListening(buildIntent())
+            }
+    }
+
+    private fun recreateRecognizerAndRestart(delayMs: Long) {
+        if (!sessionActive.get()) return
+        mainHandler.postDelayed({
+            if (!sessionActive.get()) return@postDelayed
+            try {
+                recognizer?.destroy()
+            } catch (_: Exception) {
+            }
+            recognizer = null
+            try {
+                createRecognizerAndStart()
+            } catch (e: Exception) {
+                onError("Could not restart listening: ${e.message}")
+                stop()
+            }
+        }, delayMs)
+    }
+
     private fun buildIntent(): Intent =
         Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
@@ -73,6 +96,10 @@ class AndroidSpeechRecognizerManager(
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+            // Make listening feel less "twitchy" by not ending the phrase too quickly.
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 800L)
         }
 
     private fun scheduleRestart(delayMs: Long = 120L) {
@@ -126,12 +153,25 @@ class AndroidSpeechRecognizerManager(
                             onError(message)
                         }
                     }
+                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
+                        if (sessionActive.get()) {
+                            // This happens on some devices if startListening is called too quickly.
+                            recreateRecognizerAndRestart(450L)
+                        } else {
+                            onListeningStateChanged(false)
+                        }
+                    }
                     SpeechRecognizer.ERROR_CLIENT,
                     SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS,
                     -> {
                         onListeningStateChanged(false)
                         onError(message)
-                        stop()
+                        if (sessionActive.get() && error == SpeechRecognizer.ERROR_CLIENT) {
+                            // Some OEM speech services throw CLIENT sporadically; try a clean restart once.
+                            recreateRecognizerAndRestart(450L)
+                        } else {
+                            stop()
+                        }
                     }
                     else -> {
                         onError(message)

@@ -20,6 +20,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.currentCoroutineContext
 
 /**
  * OpenAI Whisper speech recognizer for better accuracy with atypical speech patterns.
@@ -110,7 +111,7 @@ class OpenAiWhisperRecognizer(
         val chunkBuffer = ByteArrayOutputStream()
 
         try {
-            while (isRecording.get() && isActive) {
+            while (isRecording.get() && currentCoroutineContext().isActive) {
                 val read = audioRecord?.read(buffer, 0, buffer.size) ?: 0
                 if (read > 0) {
                     chunkBuffer.write(buffer, 0, read)

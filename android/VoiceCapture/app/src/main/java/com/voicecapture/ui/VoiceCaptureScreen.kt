@@ -181,22 +181,32 @@ fun VoiceCaptureScreen(
                     )
                 }
 
+                // One big toggle button is easier than Start/Stop.
+                val toggleText =
+                    when {
+                        state.isListening -> "Stop listening"
+                        !state.micPermissionGranted -> "Allow microphone to start"
+                        else -> "Start listening"
+                    }
+                CaptionButton(
+                    text = toggleText,
+                    onClick = {
+                        when {
+                            state.isListening -> viewModel.stopListening()
+                            !state.micPermissionGranted -> onRequestMicPermission()
+                            else -> viewModel.startListening()
+                        }
+                    },
+                    enabled = true,
+                    modifier = Modifier.fillMaxWidth().height(64.dp),
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    CaptionButton(
-                        text = "Start",
-                        onClick = { viewModel.startListening() },
-                        enabled = state.micPermissionGranted && !state.isListening,
-                        modifier = Modifier.weight(1f),
-                    )
-                    CaptionButton(
-                        text = "Stop",
-                        onClick = { viewModel.stopListening() },
-                        enabled = state.isListening,
-                        modifier = Modifier.weight(1f),
-                    )
                     CaptionButton(
                         text = "Clear",
                         onClick = { viewModel.clearText() },

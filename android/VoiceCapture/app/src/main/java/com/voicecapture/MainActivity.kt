@@ -45,6 +45,8 @@ class MainActivity : ComponentActivity() {
                     viewModel.setMicPermissionGranted(granted)
                     if (!granted) {
                         viewModel.stopListening()
+                    } else {
+                        viewModel.startListeningIfAllowedAndNotAlreadyStarted()
                     }
                 }
                 onDispose {
@@ -54,6 +56,9 @@ class MainActivity : ComponentActivity() {
 
             LaunchedEffect(Unit) {
                 viewModel.setMicPermissionGranted(initialGranted)
+                if (initialGranted) {
+                    viewModel.startListeningIfAllowedAndNotAlreadyStarted()
+                }
             }
 
             VoiceCaptureScreen(

@@ -6,3 +6,13 @@
 local.properties
 .DS_Store
 **/release/
+
+# Local Android SDK provisioned by scripts (never commit)
+/android-sdk/
+
+# Local downloads/extractions created during setup
+cmdline-tools.zip
+gradle-temp/
+
+# Occasionally created when inspecting jars
+/META-INF/

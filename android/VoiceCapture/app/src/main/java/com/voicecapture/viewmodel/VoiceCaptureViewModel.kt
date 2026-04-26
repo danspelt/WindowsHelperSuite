@@ -27,6 +27,7 @@ class VoiceCaptureViewModel(
     val uiState: StateFlow<CaptionUiState> = _uiState.asStateFlow()
 
     private var settingsLanguage: String = "en-US"
+    private var autoStartedThisProcess: Boolean = false
 
     private val speechManager =
         AndroidSpeechRecognizerManager(
@@ -116,6 +117,13 @@ class VoiceCaptureViewModel(
         _uiState.update { it.copy(micPermissionGranted = granted) }
     }
 
+    fun startListeningIfAllowedAndNotAlreadyStarted() {
+        if (autoStartedThisProcess) return
+        if (!_uiState.value.micPermissionGranted) return
+        autoStartedThisProcess = true
+        startListening()
+    }
+
     fun startListening() {
         val ctx = getApplication<Application>()
         if (
@@ -128,7 +136,15 @@ class VoiceCaptureViewModel(
             return
         }
 
-        _uiState.update { it.copy(statusText = "Starting…") }
+        // Keep UI stable: show "listening" immediately, even while the recognizer warms up.
+        _uiState.update { curr ->
+            val next =
+                curr.copy(
+                    isListening = true,
+                    statusText = "Listening…",
+                )
+            next.copy(displayText = recomputeDisplay(next))
+        }
         speechManager.start(settingsLanguage)
     }
 
