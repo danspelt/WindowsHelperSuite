@@ -600,14 +600,14 @@ public partial class OverlayWindow : Window
         var fieldBottom = exclusion.Bottom;
         var fieldTop = exclusion.Top;
 
-        const double sideGap = 12;
-        const double placementGap = 8;
+        const double sideGap = 20; // Increased gap for better separation
+        const double placementGap = 15; // Increased placement gap
         double left = caretX;
         double top;
         double besideL;
         double besideT;
 
-        // Space for overlay fully above/below the exclusion zone (including a small gap so WPF hit-tests don't "touch").
+        // Space for overlay fully above/below the exclusion zone (including a larger gap for better text field protection)
         var spaceBelowField = screenBottom - (fieldBottom + placementGap);
         var spaceAboveField = (fieldTop - placementGap) - screenTop;
 
@@ -663,22 +663,31 @@ public partial class OverlayWindow : Window
         }
         else
         {
-            // Auto — pick the vertical side with more room when both fit (ties: below, typical for suggestions under typing).
+            // Enhanced Auto positioning — prioritize side positioning to avoid text field coverage
             var canPlaceAbove = spaceAboveField >= windowHeight;
             var canPlaceBelow = spaceBelowField >= windowHeight;
-            if (canPlaceAbove && canPlaceBelow)
+            
+            // First, try side positioning (left/right) as it's less likely to interfere with text input
+            if (TryDockBesideExclusion(exclusion, windowWidth, windowHeight, screenLeft, screenTop, screenRight, screenBottom, sideGap, out besideL, out besideT))
             {
-                if (spaceBelowField > spaceAboveField + 24)
+                left = besideL;
+                top = besideT;
+            }
+            // If side positioning not available, try vertical positioning
+            else if (canPlaceAbove && canPlaceBelow)
+            {
+                // Choose the position with more space, but prefer below for typical typing scenarios
+                if (spaceBelowField > spaceAboveField + 40) // Increased threshold for stronger preference
                 {
                     top = fieldBottom + placementGap;
                 }
-                else if (spaceAboveField > spaceBelowField + 24)
+                else if (spaceAboveField > spaceBelowField + 40)
                 {
                     top = fieldTop - windowHeight - placementGap;
                 }
                 else
                 {
-                    top = fieldBottom + placementGap;
+                    top = fieldBottom + placementGap; // Default to below when equal
                 }
             }
             else if (canPlaceBelow)
@@ -689,14 +698,10 @@ public partial class OverlayWindow : Window
             {
                 top = fieldTop - windowHeight - placementGap;
             }
-            else if (TryDockBesideExclusion(exclusion, windowWidth, windowHeight, screenLeft, screenTop, screenRight, screenBottom, sideGap, out besideL, out besideT))
-            {
-                left = besideL;
-                top = besideT;
-            }
             else
             {
-                top = screenBottom - windowHeight - 8;
+                // Last resort: position at bottom of screen with maximum gap from text field
+                top = screenBottom - windowHeight - 20; // Increased bottom margin
             }
         }
 
@@ -783,7 +788,23 @@ public partial class OverlayWindow : Window
             return r;
         }
 
-        return new Rect(caretX - 240, caretY - 208, 480, 236);
+        // Enhanced text field detection with larger exclusion zone to ensure overlay never blocks input
+        // Calculate a more conservative exclusion zone based on typical text field dimensions
+        const int fieldWidth = 600;  // Wider to accommodate larger text fields
+        const int fieldHeight = 300; // Taller to accommodate multi-line text fields
+        
+        // Center the exclusion zone around the caret position
+        var left = caretX - (fieldWidth / 2);
+        var top = caretY - 50; // Position caret near top of exclusion zone (typical for single-line fields)
+        
+        // Ensure the exclusion zone doesn't extend beyond reasonable text field boundaries
+        // For multi-line fields, the caret might be deeper, so adjust accordingly
+        if (caretY > top + 100) // If caret is deeper than expected, it might be a multi-line field
+        {
+            top = caretY - 150; // Adjust for multi-line scenarios
+        }
+        
+        return new Rect(left, top, fieldWidth, fieldHeight);
     }
 
     private static void ResolveExclusionOverlap(
@@ -797,7 +818,7 @@ public partial class OverlayWindow : Window
         double screenRight,
         double screenBottom)
     {
-        const double gap = 10;
+        const double gap = 20; // Increased gap for better text field protection
 
         static bool Overlaps(double lx, double ty, double ww, double wh, Rect ex) =>
             new Rect(lx, ty, ww, wh).IntersectsWith(ex);
@@ -807,6 +828,7 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        // Priority 1: Position below the text field (preferred for typing scenarios)
         var topBelow = exclusion.Bottom + gap;
         if (topBelow + windowHeight <= screenBottom)
         {
@@ -818,6 +840,39 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        // Priority 2: Position to the right of the text field
+        var leftRight = exclusion.Right + gap;
+        if (leftRight + windowWidth <= screenRight)
+        {
+            left = leftRight;
+            // Center vertically with the text field
+            var centerY = exclusion.Top + (exclusion.Height - windowHeight) / 2;
+            centerY = Math.Max(screenTop, Math.Min(centerY, screenBottom - windowHeight));
+            top = centerY;
+        }
+
+        if (!Overlaps(left, top, windowWidth, windowHeight, exclusion))
+        {
+            return;
+        }
+
+        // Priority 3: Position to the left of the text field
+        var leftLeft = exclusion.Left - windowWidth - gap;
+        if (leftLeft >= screenLeft)
+        {
+            left = leftLeft;
+            // Center vertically with the text field
+            var centerY = exclusion.Top + (exclusion.Height - windowHeight) / 2;
+            centerY = Math.Max(screenTop, Math.Min(centerY, screenBottom - windowHeight));
+            top = centerY;
+        }
+
+        if (!Overlaps(left, top, windowWidth, windowHeight, exclusion))
+        {
+            return;
+        }
+
+        // Priority 4: Position above the text field
         var topAbove = exclusion.Top - windowHeight - gap;
         if (topAbove >= screenTop)
         {
@@ -829,31 +884,26 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        var centerY = exclusion.Top + (exclusion.Height - windowHeight) / 2;
-        centerY = Math.Max(screenTop, Math.Min(centerY, screenBottom - windowHeight));
-
-        var leftRight = exclusion.Right + gap;
-        if (leftRight + windowWidth <= screenRight)
-        {
-            left = leftRight;
-            top = centerY;
-        }
-
+        // Last resort: Position at screen edges with maximum distance from text field
+        // Try bottom-right corner first
+        left = screenRight - windowWidth - 20;
+        top = screenBottom - windowHeight - 20;
         if (!Overlaps(left, top, windowWidth, windowHeight, exclusion))
         {
             return;
         }
 
-        var leftLeft = exclusion.Left - windowWidth - gap;
-        if (leftLeft >= screenLeft)
+        // Try bottom-left corner
+        left = screenLeft + 20;
+        top = screenBottom - windowHeight - 20;
+        if (!Overlaps(left, top, windowWidth, windowHeight, exclusion))
         {
-            left = leftLeft;
-            top = centerY;
+            return;
         }
 
-        // Do not clamp back into the exclusion zone: only apply work-area clamp if it keeps us clear.
-        var cl = Math.Max(screenLeft + 4, Math.Min(left, screenRight - windowWidth - 4));
-        var ct = Math.Max(screenTop, Math.Min(top, screenBottom - windowHeight));
+        // Final fallback: use work area clamp but ensure we don't overlap
+        var cl = Math.Max(screenLeft + 20, Math.Min(left, screenRight - windowWidth - 20));
+        var ct = Math.Max(screenTop + 20, Math.Min(top, screenBottom - windowHeight - 20));
         if (!Overlaps(cl, ct, windowWidth, windowHeight, exclusion))
         {
             left = cl;

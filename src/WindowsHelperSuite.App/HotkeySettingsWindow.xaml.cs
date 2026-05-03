@@ -37,6 +37,7 @@ public partial class HotkeySettingsWindow : Window
     private bool _pendingLargeText;
     private OverlayLayout _pendingLayout;
     private WriterOverlayCaretPlacement _pendingOverlayCaretPlacement = WriterOverlayCaretPlacement.Auto;
+    private WriterOverlayScreenPreference _pendingOverlayScreenPreference = WriterOverlayScreenPreference.CurrentScreen;
     private int _pendingOverlayFadeMs = 110;
     private string _pendingAccent = "#4ADE80";
     private string _pendingBg = "#0F0F14";
@@ -73,6 +74,7 @@ public partial class HotkeySettingsWindow : Window
         ("ToggleOverlay",              "Show / Hide Overlay",          "💬"),
         ("PauseWriter",                "Pause / Resume Writer",        "⏸"),
         ("WakeWriter",                 "Wake Writer (required to activate)", "⏰"),
+        ("KillWriter",                 "Kill Writer (Ctrl+Q)",           "⚡"),
         ("AddToWordBank",              "Add Word to Bank",             "📝"),
         ("AddPhraseToWordBank",        "Add Phrase to Bank",           "📋"),
         ("FixClipboardCapitalization", "Fix Clipboard Capitalization", "✏"),
@@ -91,6 +93,7 @@ public partial class HotkeySettingsWindow : Window
         ["ToggleOverlay"]              = "Ctrl+Shift+O",
         ["PauseWriter"]                = "Ctrl+Shift+P",
         ["WakeWriter"]                 = "`",
+        ["KillWriter"]                 = "Ctrl+Q",
         ["AddToWordBank"]              = "Ctrl+`",
         ["AddPhraseToWordBank"]        = "Ctrl+Shift+`",
         ["FixClipboardCapitalization"] = "Ctrl+Shift+C",
@@ -173,6 +176,7 @@ public partial class HotkeySettingsWindow : Window
         _pendingLargeText = ui.LargeTextMode;
         _pendingLayout = ui.Layout;
         _pendingOverlayCaretPlacement = ui.OverlayCaretPlacement;
+        _pendingOverlayScreenPreference = ui.OverlayScreenPreference;
         _pendingOverlayFadeMs = Math.Clamp(ui.OverlayFadeTransitionMs, 0, 600);
         _pendingAccent = ui.AccentColor;
         _pendingBg     = ui.OverlayBackgroundColor;
@@ -266,6 +270,36 @@ public partial class HotkeySettingsWindow : Window
             if (OverlayCaretPlacementCombo.SelectedItem is ComboBoxItem { Tag: WriterOverlayCaretPlacement tag })
             {
                 _pendingOverlayCaretPlacement = tag;
+            }
+        };
+
+        // Multi-screen preference
+        OverlayScreenPreferenceCombo.Items.Clear();
+        foreach (WriterOverlayScreenPreference p in Enum.GetValues<WriterOverlayScreenPreference>())
+        {
+            var label = p switch
+            {
+                WriterOverlayScreenPreference.CurrentScreen => "Current screen",
+                WriterOverlayScreenPreference.NextScreen => "Next screen",
+                _ => p.ToString()
+            };
+            OverlayScreenPreferenceCombo.Items.Add(new ComboBoxItem { Content = label, Tag = p });
+        }
+
+        foreach (ComboBoxItem ci in OverlayScreenPreferenceCombo.Items)
+        {
+            if (ci.Tag is WriterOverlayScreenPreference tag && tag == _pendingOverlayScreenPreference)
+            {
+                OverlayScreenPreferenceCombo.SelectedItem = ci;
+                break;
+            }
+        }
+
+        OverlayScreenPreferenceCombo.SelectionChanged += (_, _) =>
+        {
+            if (OverlayScreenPreferenceCombo.SelectedItem is ComboBoxItem { Tag: WriterOverlayScreenPreference tag })
+            {
+                _pendingOverlayScreenPreference = tag;
             }
         };
 
@@ -853,6 +887,7 @@ public partial class HotkeySettingsWindow : Window
                 _pendingLargeText  = false;
                 _pendingLayout     = OverlayLayout.Vertical;
                 _pendingOverlayCaretPlacement = WriterOverlayCaretPlacement.Auto;
+                _pendingOverlayScreenPreference = WriterOverlayScreenPreference.CurrentScreen;
                 _pendingOverlayFadeMs = 110;
                 _pendingAccent     = "#4ADE80";
                 _pendingBg         = "#0F0F14";
@@ -879,6 +914,15 @@ public partial class HotkeySettingsWindow : Window
                     if (ci.Tag is WriterOverlayCaretPlacement tag && tag == WriterOverlayCaretPlacement.Auto)
                     {
                         OverlayCaretPlacementCombo.SelectedItem = ci;
+                        break;
+                    }
+                }
+
+                foreach (ComboBoxItem ci in OverlayScreenPreferenceCombo.Items)
+                {
+                    if (ci.Tag is WriterOverlayScreenPreference tag && tag == WriterOverlayScreenPreference.CurrentScreen)
+                    {
+                        OverlayScreenPreferenceCombo.SelectedItem = ci;
                         break;
                     }
                 }
@@ -946,6 +990,7 @@ public partial class HotkeySettingsWindow : Window
         ui.LargeTextMode          = _pendingLargeText;
         ui.Layout                 = _pendingLayout;
         ui.OverlayCaretPlacement  = _pendingOverlayCaretPlacement;
+        ui.OverlayScreenPreference = _pendingOverlayScreenPreference;
         ui.OverlayFadeTransitionMs = Math.Clamp(_pendingOverlayFadeMs, 0, 600);
         ui.AccentColor            = _pendingAccent;
         ui.OverlayBackgroundColor = _pendingBg;

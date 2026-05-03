@@ -210,6 +210,11 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
         _ = _languageStore.RecordAcceptedSuggestionAsync(phrase, ctx);
     }
 
+    public void RemoveSuggestion(string text)
+    {
+        _wordBank.RemoveSuggestion(text);
+    }
+
     public void Dispose()
     {
         if (_disposed)

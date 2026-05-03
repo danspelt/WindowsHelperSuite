@@ -14,4 +14,5 @@ public interface IPredictionService
     void LearnBigramWithContext(string? wordBefore, string previousWord, string currentWord);
     void AcceptWord(string word);
     void AcceptPhrase(string phrase);
+    void RemoveSuggestion(string text);
 }

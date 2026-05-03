@@ -1,5 +1,11 @@
 namespace WindowsHelperSuite.Core.Models.Settings;
 
+public enum WriterOverlayScreenPreference
+{
+    CurrentScreen,
+    NextScreen
+}
+
 public class UiSettings
 {
     public int FontSize { get; set; } = 14;
@@ -14,6 +20,9 @@ public class UiSettings
 
     /// <summary>Where to place the overlay relative to the caret.</summary>
     public WriterOverlayCaretPlacement OverlayCaretPlacement { get; set; } = WriterOverlayCaretPlacement.Auto;
+
+    /// <summary>Which screen to place the overlay on in multi-monitor setups.</summary>
+    public WriterOverlayScreenPreference OverlayScreenPreference { get; set; } = WriterOverlayScreenPreference.CurrentScreen;
 
     /// <summary>Show/hide opacity transition length in ms; 0 disables.</summary>
     public int OverlayFadeTransitionMs { get; set; } = 110;

@@ -427,6 +427,35 @@ public class PredictionService : IPredictionService, IDisposable
         }
     }
 
+    public void RemoveSuggestion(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        var normalizedWord = NormalizeWord(text);
+        var normalizedPhrase = NormalizePhrase(text);
+
+        lock (_syncRoot)
+        {
+            // Try to remove as word first
+            if (_wordIndex.TryGetValue(normalizedWord, out var wordEntry))
+            {
+                _store.Words.Remove(wordEntry);
+                _wordIndex.Remove(normalizedWord);
+                ScheduleSave();
+                return;
+            }
+
+            // Try to remove as phrase
+            if (_phraseIndex.TryGetValue(normalizedPhrase, out var phraseEntry))
+            {
+                _store.Phrases.Remove(phraseEntry);
+                _phraseIndex.Remove(normalizedPhrase);
+                ScheduleSave();
+                return;
+            }
+        }
+    }
+
     private void TrackRecent(string word)
     {
         _recentlyAccepted.Remove(word);

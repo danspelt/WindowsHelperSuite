@@ -245,6 +245,27 @@ public class OverlayService : IOverlayService, IDisposable
         if (Win32Caret.GetCaretPosition(out var x, out var y))
         {
             var exclusion = BuildTextExclusionRect(x, y, uiaBounds);
+            
+            // Check if we should position on next screen
+            var screenPreference = _settingsService.Settings.Ui.OverlayScreenPreference;
+            if (screenPreference == WriterOverlayScreenPreference.NextScreen)
+            {
+                // Position on next screen instead of current
+                var nextScreenCenter = GetNextScreenCenter(x, y);
+                if (nextScreenCenter.HasValue)
+                {
+                    var nextExclusion = BuildTextExclusionRect(nextScreenCenter.Value.X, nextScreenCenter.Value.Y, uiaBounds);
+                    RunOnUiThread(() => _overlayWindow?.PositionNearPoint(nextScreenCenter.Value.X, nextScreenCenter.Value.Y, pos, nextExclusion));
+                    if (nextScreenCenter.Value.X != _lastLogCaretX || nextScreenCenter.Value.Y != _lastLogCaretY)
+                    {
+                        _lastLogCaretX = nextScreenCenter.Value.X;
+                        _lastLogCaretY = nextScreenCenter.Value.Y;
+                        _loggingService.Debug($"Overlay positioned on next screen: {nextScreenCenter.Value.X}, {nextScreenCenter.Value.Y}");
+                    }
+                    return;
+                }
+            }
+            
             RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, pos, exclusion));
             if (x != _lastLogCaretX || y != _lastLogCaretY)
             {
@@ -267,6 +288,17 @@ public class OverlayService : IOverlayService, IDisposable
                 _loggingService.Debug($"Overlay positioned at screen center (caret unavailable): {centerX}, {centerY}");
             }
         }
+    }
+
+    private (int X, int Y)? GetNextScreenCenter(int currentX, int currentY)
+    {
+        if (Win32Screen.TryGetNextScreenWorkArea(currentX, currentY, out var left, out var top, out var right, out var bottom))
+        {
+            var centerX = left + (right - left) / 2;
+            var centerY = top + (bottom - top) / 2;
+            return (centerX, centerY);
+        }
+        return null;
     }
 
     /// <summary>

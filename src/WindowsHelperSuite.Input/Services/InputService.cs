@@ -467,17 +467,40 @@ public class InputService : IInputService, IDisposable
                         _currentWord.Clear();
                     }
 
-                    _currentSentence.Append(typedChar);
-                    if (IsSentenceTerminator(typedChar))
+                    // Build sentence from accumulated words
+                    if (_currentSentence.Length > 0)
                     {
                         var sentence = _currentSentence.ToString().Trim();
-                        if (!string.IsNullOrWhiteSpace(sentence))
+                        
+                        // Add the completed word if we have one
+                        if (!string.IsNullOrWhiteSpace(wordCompleted))
                         {
-                            sentenceCompleted = sentence;
+                            // Ensure proper spacing
+                            if (sentence.EndsWith(" "))
+                            {
+                                sentence += wordCompleted;
+                            }
+                            else
+                            {
+                                sentence += " " + wordCompleted;
+                            }
                         }
 
-                        _currentSentence.Clear();
+                        // Only fire sentence completion if we have meaningful content
+                        if (!string.IsNullOrWhiteSpace(sentence.Trim()))
+                        {
+                            sentenceCompleted = sentence.Trim();
+                        }
                     }
+                    else if (!string.IsNullOrWhiteSpace(wordCompleted))
+                    {
+                        // Single word without sentence context - treat as sentence for learning
+                        sentenceCompleted = wordCompleted;
+                    }
+
+                    // Clear buffers for next sentence
+                    _currentSentence.Clear();
+                    _currentWord.Clear();
                 }
 
                 if (wordCompleted != null)
@@ -600,10 +623,35 @@ public class InputService : IInputService, IDisposable
                     _currentWord.Clear();
                 }
 
-                var sentence = _currentSentence.ToString().Trim();
-                if (!string.IsNullOrWhiteSpace(sentence))
+                // Build sentence from accumulated words with proper spacing
+                if (_currentSentence.Length > 0)
                 {
-                    sentenceCompleted = sentence;
+                    var sentence = _currentSentence.ToString().Trim();
+                    
+                    // Add the completed word if we have one
+                    if (!string.IsNullOrWhiteSpace(wordCompleted))
+                    {
+                        // Ensure proper spacing
+                        if (sentence.EndsWith(" "))
+                        {
+                            sentence += wordCompleted;
+                        }
+                        else
+                        {
+                            sentence += " " + wordCompleted;
+                        }
+                    }
+
+                    // Only fire sentence completion if we have meaningful content
+                    if (!string.IsNullOrWhiteSpace(sentence.Trim()))
+                    {
+                        sentenceCompleted = sentence.Trim();
+                    }
+                }
+                else if (!string.IsNullOrWhiteSpace(wordCompleted))
+                {
+                    // Single word without sentence context - treat as sentence for learning
+                    sentenceCompleted = wordCompleted;
                 }
 
                 _currentSentence.Clear();

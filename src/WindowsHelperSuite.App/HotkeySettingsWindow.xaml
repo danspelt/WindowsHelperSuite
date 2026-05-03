@@ -668,6 +668,21 @@
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="200"/>
                                     <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Multi-screen position" FontSize="14" Foreground="#D8D8F0"/>
+                                    <TextBlock Text="Which screen to show overlay on" FontSize="11" Foreground="#55558A" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <ComboBox x:Name="OverlayScreenPreferenceCombo" Grid.Column="1" MinWidth="140"
+                                          VerticalAlignment="Center" Margin="12,0,0,0"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,20">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="200"/>
+                                    <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="44"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel VerticalAlignment="Center">

@@ -383,14 +383,27 @@ public class ApplicationService : IDisposable
                 typedPartial = _currentWord ?? string.Empty;
                 _lastSelectionTick = now;
                 _currentWord = string.Empty;
+                
+                // Mark this suggestion as used
+                if (suggestion != null)
+                {
+                    var textToAdd = suggestion.InsertText ?? suggestion.DisplayText ?? string.Empty;
+                    if (!string.IsNullOrEmpty(textToAdd))
+                    {
+                        _usedSuggestionsInCurrentSession.Add(textToAdd);
+                    }
+                }
+                
                 _currentSuggestions = [];
             }
 
             _inputService.ResetAfterInsertion();
 
+            if (suggestion == null) return;
+
             var rawBeforePartial = _inputService.GetRawTextBeforeCurrentPartial();
             var capOpts = WriterCapitalizationOptions.From(_settingsService.Settings.Writer);
-            var acceptedText = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText, capOpts);
+            var acceptedText = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText ?? string.Empty, capOpts);
             var textToInsert = ResolveSuggestionInsertText(suggestion, acceptedText);
             var suggestionKind = suggestion.Kind;
 
@@ -444,6 +457,7 @@ public class ApplicationService : IDisposable
 
     private string _currentWord = string.Empty;
     private List<SuggestionItem> _currentSuggestions = [];
+    private HashSet<string> _usedSuggestionsInCurrentSession = [];
     private bool _hasValidTextInput = false;
     private long _lastSelectionTick;
     private int _overlayAiGeneration;
@@ -1023,14 +1037,27 @@ public class ApplicationService : IDisposable
             charsToDelete = _currentWord?.Length ?? 0;
             typedPartial = _currentWord ?? string.Empty;
             _currentWord = string.Empty;
+            
+            // Mark this suggestion as used
+            if (suggestion != null)
+            {
+                var textToAdd = suggestion.InsertText ?? suggestion.DisplayText ?? string.Empty;
+                if (!string.IsNullOrEmpty(textToAdd))
+                {
+                    _usedSuggestionsInCurrentSession.Add(textToAdd);
+                }
+            }
+            
             _currentSuggestions = [];
         }
 
         _inputService.ClearCurrentWord();
 
+        if (suggestion == null) return;
+
         var rawBeforePartial = _inputService.GetRawTextBeforeCurrentPartial();
         var capOpts = WriterCapitalizationOptions.From(_settingsService.Settings.Writer);
-        var acceptedText = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText, capOpts);
+        var acceptedText = CapitalizationService.FixInsertion(rawBeforePartial, suggestion.DisplayText ?? string.Empty, capOpts);
         var textToInsert = ResolveSuggestionInsertText(suggestion, acceptedText);
 
         _inputService.BeginInjection();
@@ -1159,6 +1186,27 @@ public class ApplicationService : IDisposable
             });
         });
 
+        _hotkeyService.RegisterAction("KillWriter", () =>
+        {
+            DeferWriterUi(() =>
+            {
+                HideOverlay();
+                _speechService.Stop();
+                lock (_writerStateLock)
+                {
+                    _currentWord = string.Empty;
+                    _currentSuggestions = [];
+                    _usedSuggestionsInCurrentSession.Clear();
+                }
+
+                _hasValidTextInput = false;
+                _previousWord = string.Empty;
+                _recentWords.Clear();
+                _writerAwake = false;
+                _loggingService.Information("Writer killed via Ctrl+Q hotkey — all state cleared");
+            });
+        });
+
         _hotkeyService.RegisterAction("AddToWordBank", () =>
         {
             AddCurrentTypingToWordBank();
@@ -1213,6 +1261,7 @@ public class ApplicationService : IDisposable
             _hotkeyService.RegisterHotkey("ToggleOverlay", "Ctrl+Shift+O");
             _hotkeyService.RegisterHotkey("PauseWriter", "Ctrl+Shift+P");
             _hotkeyService.RegisterHotkey("WakeWriter", "`");
+            _hotkeyService.RegisterHotkey("KillWriter", "Ctrl+Q");
             _hotkeyService.RegisterHotkey("AddToWordBank", "Ctrl+`");
             _hotkeyService.RegisterHotkey("AddPhraseToWordBank", "Ctrl+Shift+`");
             _hotkeyService.RegisterHotkey("FixClipboardCapitalization", "Ctrl+Shift+C");
@@ -1265,7 +1314,7 @@ public class ApplicationService : IDisposable
     private static readonly string[] AllHotkeyActionNames =
     [
         "VolumeUp", "VolumeDown", "VolumeMute", "WriterRefresh",
-        "ToggleOverlay", "PauseWriter", "WakeWriter", "AddToWordBank", "AddPhraseToWordBank",
+        "ToggleOverlay", "PauseWriter", "WakeWriter", "KillWriter", "AddToWordBank", "AddPhraseToWordBank",
         "FixClipboardCapitalization", "OpenModeMenu", "OpenLiveCaptions", "OpenSettings", "OpenStillSpace",
     ];
 
@@ -1503,6 +1552,9 @@ public class ApplicationService : IDisposable
 
         _predictionService.LearnPhrase(normalized);
 
+        // Delete unused suggestions from this session
+        DeleteUnusedSuggestions();
+
         if (_predictionService is CompositePredictionService compositeSentence)
         {
             compositeSentence.NotifySentenceCommitted(normalized);
@@ -1525,6 +1577,34 @@ public class ApplicationService : IDisposable
 
         _recentWords.Clear();
         _previousWord = string.Empty;
+    }
+
+    private void DeleteUnusedSuggestions()
+    {
+        if (_usedSuggestionsInCurrentSession.Count == 0)
+        {
+            return;
+        }
+
+        // Get all suggestions that were shown but not used in this session
+        var unusedSuggestions = _currentSuggestions
+            .Where(s => !_usedSuggestionsInCurrentSession.Contains(s.InsertText ?? s.DisplayText))
+            .ToList();
+
+        foreach (var unused in unusedSuggestions)
+        {
+            var textToDelete = unused.InsertText ?? unused.DisplayText;
+            
+            // Remove from prediction service if it's a word or phrase we learned
+            if (unused.Kind == SuggestionKind.WordCompletion || unused.Kind == SuggestionKind.PhraseCompletion)
+            {
+                _predictionService.RemoveSuggestion(textToDelete);
+                _loggingService.Debug($"Deleted unused suggestion: {textToDelete}");
+            }
+        }
+
+        // Clear the used suggestions for the next session
+        _usedSuggestionsInCurrentSession.Clear();
     }
 
     private void LearnAcceptedSuggestion(
