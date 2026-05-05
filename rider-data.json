@@ -1,0 +1,21 @@
+{
+  "rider": {
+    "enabled": true,
+    "wakePhrase": "I is king",
+    "wakeHotkeyGesture": "`",
+    "wakeKeyOnly": true,
+    "stayActiveAfterWakePhrase": true,
+    "sleepTimeoutSeconds": 0,
+    "exactWakePhraseMatch": true,
+    "wakePhraseConfidenceThreshold": 0.85,
+    "consumeWakeKey": true
+  },
+  "behavior": {
+    "description": "The rider only activates via the wake-up key. Once the rider is up (via wake phrase 'I is king'), it responds ONLY to the wake-up key.",
+    "activationRules": [
+      "Only the wake-up key (`) can activate the rider",
+      "Wake phrase 'I is king' brings the rider up, but only wake key controls it thereafter",
+      "No other keys can trigger the rider when wakeKeyOnly is true"
+    ]
+  }
+}

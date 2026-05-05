@@ -1139,11 +1139,21 @@ public class ApplicationService : IDisposable
 
         _hotkeyService.RegisterAction("WriterRefresh", () =>
         {
+            if (!_writerAwake)
+            {
+                _loggingService.Debug("WriterRefresh ignored — writer is sleeping (press wake key to activate)");
+                return;
+            }
             _loggingService.Information("Writer refresh requested");
         });
 
         _hotkeyService.RegisterAction("ToggleOverlay", () =>
         {
+            if (!_writerAwake)
+            {
+                _loggingService.Debug("ToggleOverlay ignored — writer is sleeping (press wake key to activate)");
+                return;
+            }
             DeferWriterUi(() =>
             {
                 if (Win32Caret.GetCaretPosition(out var x, out var y) && (x != 0 || y != 0))
@@ -1159,6 +1169,11 @@ public class ApplicationService : IDisposable
 
         _hotkeyService.RegisterAction("PauseWriter", () =>
         {
+            if (!_writerAwake)
+            {
+                _loggingService.Debug("PauseWriter ignored — writer is sleeping (press wake key to activate)");
+                return;
+            }
             _inputService.IsEnabled = !_inputService.IsEnabled;
             _loggingService.Information($"Writer {(_inputService.IsEnabled ? "enabled" : "paused")}");
         });
@@ -1207,19 +1222,83 @@ public class ApplicationService : IDisposable
             });
         });
 
+        _hotkeyService.RegisterAction("CleanupWordBank", () =>
+        {
+            if (!_writerAwake)
+            {
+                _loggingService.Debug("CleanupWordBank ignored — writer is sleeping (press wake key to activate)");
+                return;
+            }
+            DeferWriterUi(() =>
+            {
+                _predictionService.CleanupNonsensicalEntries();
+                _loggingService.Information("Word bank cleanup completed — removed nonsensical entries");
+            });
+        });
+
+        _hotkeyService.RegisterAction("ResetAllWordBank", () =>
+        {
+            if (!_writerAwake)
+            {
+                _loggingService.Debug("ResetAllWordBank ignored — writer is sleeping (press wake key to activate)");
+                return;
+            }
+            DeferWriterUi(() =>
+            {
+                _predictionService.ClearAll();
+                _loggingService.Information("Word bank completely reset — all words and phrases cleared");
+                _overlayService.SetOverlayStatusHint("Word bank reset complete");
+            });
+        });
+
         _hotkeyService.RegisterAction("AddToWordBank", () =>
         {
+            if (!_writerAwake)
+            {
+                _loggingService.Debug("AddToWordBank ignored — writer is sleeping (press wake key to activate)");
+                return;
+            }
             AddCurrentTypingToWordBank();
         });
 
         _hotkeyService.RegisterAction("AddPhraseToWordBank", () =>
         {
+            if (!_writerAwake)
+            {
+                _loggingService.Debug("AddPhraseToWordBank ignored — writer is sleeping (press wake key to activate)");
+                return;
+            }
             AddCurrentPhraseToWordBank();
         });
 
         _hotkeyService.RegisterAction("FixClipboardCapitalization", () =>
         {
+            if (!_writerAwake)
+            {
+                _loggingService.Debug("FixClipboardCapitalization ignored — writer is sleeping (press wake key to activate)");
+                return;
+            }
             FixClipboardSentenceCapitalization();
+        });
+
+        _hotkeyService.RegisterAction("FixGrammar", () =>
+        {
+            if (!_writerAwake)
+            {
+                _loggingService.Debug("FixGrammar ignored — writer is sleeping (press wake key to activate)");
+                return;
+            }
+            _ = FixGrammarAsync();
+        });
+
+        _hotkeyService.RegisterAction("CompleteSentence", () =>
+        {
+            if (!_writerAwake)
+            {
+                _loggingService.Debug("CompleteSentence ignored — writer is sleeping (press wake key to activate)");
+                return;
+            }
+            _ = CompleteSentenceAsync();
         });
 
         _hotkeyService.RegisterAction("OpenModeMenu", ShowModeMenu);
@@ -1262,9 +1341,13 @@ public class ApplicationService : IDisposable
             _hotkeyService.RegisterHotkey("PauseWriter", "Ctrl+Shift+P");
             _hotkeyService.RegisterHotkey("WakeWriter", "`");
             _hotkeyService.RegisterHotkey("KillWriter", "Ctrl+Q");
+            _hotkeyService.RegisterHotkey("CleanupWordBank", "Ctrl+Shift+X");
+            _hotkeyService.RegisterHotkey("ResetAllWordBank", "Ctrl+Shift+Delete");
             _hotkeyService.RegisterHotkey("AddToWordBank", "Ctrl+`");
             _hotkeyService.RegisterHotkey("AddPhraseToWordBank", "Ctrl+Shift+`");
             _hotkeyService.RegisterHotkey("FixClipboardCapitalization", "Ctrl+Shift+C");
+            _hotkeyService.RegisterHotkey("FixGrammar", "Ctrl+Shift+G");
+            _hotkeyService.RegisterHotkey("CompleteSentence", "Ctrl+Shift+S");
             _hotkeyService.RegisterHotkey("OpenModeMenu", _settingsService.Settings.ModeSystem.MenuHotkeyGesture, true);
             _hotkeyService.RegisterHotkey("OpenLiveCaptions", "Ctrl+Shift+L");
             _hotkeyService.RegisterHotkey("OpenSettings", "Ctrl+F3");
@@ -1314,8 +1397,8 @@ public class ApplicationService : IDisposable
     private static readonly string[] AllHotkeyActionNames =
     [
         "VolumeUp", "VolumeDown", "VolumeMute", "WriterRefresh",
-        "ToggleOverlay", "PauseWriter", "WakeWriter", "KillWriter", "AddToWordBank", "AddPhraseToWordBank",
-        "FixClipboardCapitalization", "OpenModeMenu", "OpenLiveCaptions", "OpenSettings", "OpenStillSpace",
+        "ToggleOverlay", "PauseWriter", "WakeWriter", "KillWriter", "CleanupWordBank", "ResetAllWordBank", "AddToWordBank", "AddPhraseToWordBank",
+        "FixClipboardCapitalization", "FixGrammar", "CompleteSentence", "OpenModeMenu", "OpenLiveCaptions", "OpenSettings", "OpenStillSpace",
     ];
 
     private void ReloadHotkeys()
@@ -1536,6 +1619,54 @@ public class ApplicationService : IDisposable
                 _loggingService.Warning($"FixClipboardCapitalization failed: {ex.Message}");
             }
         });
+    }
+
+    private async Task FixGrammarAsync()
+    {
+        try
+        {
+            // Get current text from the active text field
+            var context = _inputService.GetSuggestionContextPrefix();
+            var word = _inputService.GetCurrentWord();
+            var fullText = _inputService.GetFullSentenceForOverlay();
+
+            _loggingService.Information($"FixGrammar requested for: '{fullText}'");
+
+            // TODO: Integrate with AiGrammarService when available
+            // For now, just log the request
+            _overlayService.SetOverlayStatusHint("Grammar fix not yet implemented — coming soon!");
+
+            await Task.Delay(2000);
+            _overlayService.SetOverlayStatusHint(null);
+        }
+        catch (Exception ex)
+        {
+            _loggingService.Warning($"FixGrammarAsync failed: {ex.Message}");
+        }
+    }
+
+    private async Task CompleteSentenceAsync()
+    {
+        try
+        {
+            // Get current text context
+            var context = _inputService.GetSuggestionContextPrefix();
+            var word = _inputService.GetCurrentWord();
+            var fullText = _inputService.GetFullSentenceForOverlay();
+
+            _loggingService.Information($"CompleteSentence requested for: '{fullText}'");
+
+            // TODO: Integrate with AiSentenceCompletionService when available
+            // For now, just log the request
+            _overlayService.SetOverlayStatusHint("Sentence completion not yet implemented — coming soon!");
+
+            await Task.Delay(2000);
+            _overlayService.SetOverlayStatusHint(null);
+        }
+        catch (Exception ex)
+        {
+            _loggingService.Warning($"CompleteSentenceAsync failed: {ex.Message}");
+        }
     }
 
     private void OnSentenceTyped(string sentence)

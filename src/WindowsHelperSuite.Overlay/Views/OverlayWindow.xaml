@@ -24,28 +24,28 @@
         FontFamily="Segoe UI">
 
     <Window.Resources>
-        <!-- Modern dark palette with depth -->
-        <SolidColorBrush x:Key="PrimaryBackground" Color="#0F0F14"/>
-        <SolidColorBrush x:Key="SecondaryBackground" Color="#1A1B23"/>
-        <SolidColorBrush x:Key="CardBackground" Color="#1E1F2A"/>
-        <SolidColorBrush x:Key="CardHover" Color="#252636"/>
-        <SolidColorBrush x:Key="AccentGreen" Color="#4ADE80"/>
-        <Color x:Key="AccentGreenColor">#FF4ADE80</Color>
-        <SolidColorBrush x:Key="AccentGreenDim" Color="#2A5A3E"/>
-        <SolidColorBrush x:Key="AccentBlue" Color="#60A5FA"/>
-        <SolidColorBrush x:Key="TextPrimary" Color="#F0F0F5"/>
-        <SolidColorBrush x:Key="TextSecondary" Color="#6B7280"/>
-        <SolidColorBrush x:Key="TextMuted" Color="#4B5563"/>
-        <SolidColorBrush x:Key="BorderColor" Color="#2A2B36"/>
-        <SolidColorBrush x:Key="BorderSubtle" Color="#222330"/>
-        <SolidColorBrush x:Key="AccentPurple" Color="#A78BFA"/>
-        <SolidColorBrush x:Key="ContextBackground" Color="#16171F"/>
-        <SolidColorBrush x:Key="AccentStripe" Color="#4ADE80"/>
+        <!-- Red and green theme palette with maximum transparency -->
+        <SolidColorBrush x:Key="PrimaryBackground" Color="#000A0F0A"/>
+        <SolidColorBrush x:Key="SecondaryBackground" Color="#001A2B1A"/>
+        <SolidColorBrush x:Key="CardBackground" Color="#0A1F3A1F"/>
+        <SolidColorBrush x:Key="CardHover" Color="#0F2A4A2A"/>
+        <SolidColorBrush x:Key="AccentGreen" Color="#00FF00"/>
+        <Color x:Key="AccentGreenColor">#FF00FF00</Color>
+        <SolidColorBrush x:Key="AccentGreenDim" Color="#201A4A1A"/>
+        <SolidColorBrush x:Key="AccentRed" Color="#FF4444"/>
+        <SolidColorBrush x:Key="TextPrimary" Color="#E0FFE0"/>
+        <SolidColorBrush x:Key="TextSecondary" Color="#90C090"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#608060"/>
+        <SolidColorBrush x:Key="BorderColor" Color="#153A5A3A"/>
+        <SolidColorBrush x:Key="BorderSubtle" Color="#0A2A3A2A"/>
+        <SolidColorBrush x:Key="AccentPurple" Color="#FF6666"/>
+        <SolidColorBrush x:Key="ContextBackground" Color="#050F1F0F"/>
+        <SolidColorBrush x:Key="AccentStripe" Color="#00FF00"/>
 
         <!-- Glow effects for high-confidence suggestions -->
-        <DropShadowEffect x:Key="GlowEffect" Color="#4ADE80" BlurRadius="20" ShadowDepth="0" Opacity="0.0"/>
-        <DropShadowEffect x:Key="GlowEffectActive" Color="#4ADE80" BlurRadius="25" ShadowDepth="0" Opacity="0.35"/>
-        <DropShadowEffect x:Key="GlowEffectSubtle" Color="#60A5FA" BlurRadius="15" ShadowDepth="0" Opacity="0.2"/>
+        <DropShadowEffect x:Key="GlowEffect" Color="#00FF00" BlurRadius="20" ShadowDepth="0" Opacity="0.0"/>
+        <DropShadowEffect x:Key="GlowEffectActive" Color="#00FF00" BlurRadius="25" ShadowDepth="0" Opacity="0.35"/>
+        <DropShadowEffect x:Key="GlowEffectSubtle" Color="#FF4444" BlurRadius="15" ShadowDepth="0" Opacity="0.2"/>
 
         <!-- Suggestion button style — modern card, large targets, high contrast -->
         <Style x:Key="SuggestionButtonStyle" TargetType="Button">

@@ -215,6 +215,17 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
         _wordBank.RemoveSuggestion(text);
     }
 
+    public void CleanupNonsensicalEntries()
+    {
+        _wordBank.CleanupNonsensicalEntries();
+    }
+
+    public void ClearAll()
+    {
+        _wordBank.ClearAll();
+        _languageStore.Dispose();
+    }
+
     public void Dispose()
     {
         if (_disposed)

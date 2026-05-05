@@ -912,8 +912,8 @@ public partial class OverlayWindow : Window
     }
 
     public void ApplyUiSettings(int fontSize, double opacity, bool largeTextMode,
-        string accentColor = "#4ADE80", string bgColor = "#0F0F14",
-        string cardColor = "#1E1F2A", string textColor = "#F0F0F5",
+        string accentColor = "#00FF00", string bgColor = "#000A0F0A",
+        string cardColor = "#0A1F3A1F", string textColor = "#E0FFE0",
         string fontFamily = "Segoe UI", string fontWeight = "SemiBold",
         int overlayFadeTransitionMs = 110)
     {

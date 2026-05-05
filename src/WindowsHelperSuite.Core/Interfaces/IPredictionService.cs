@@ -15,4 +15,14 @@ public interface IPredictionService
     void AcceptWord(string word);
     void AcceptPhrase(string phrase);
     void RemoveSuggestion(string text);
+
+    /// <summary>
+    /// Cleans up nonsensical words and phrases from the prediction service
+    /// </summary>
+    void CleanupNonsensicalEntries();
+
+    /// <summary>
+    /// Clears all words and phrases from the word bank
+    /// </summary>
+    void ClearAll();
 }

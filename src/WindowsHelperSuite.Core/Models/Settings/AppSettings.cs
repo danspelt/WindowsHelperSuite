@@ -16,4 +16,6 @@ public class AppSettings
     public VoiceBridgeSettings VoiceBridge { get; set; } = new();
 
     public LiveCaptionSettings LiveCaptions { get; set; } = new();
+
+    public RiderSettings Rider { get; set; } = new();
 }

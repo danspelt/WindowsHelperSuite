@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using WindowsHelperSuite.Core.Interfaces;
 using WindowsHelperSuite.Core.Models;
 using WindowsHelperSuite.Core.Models.Settings;
@@ -454,6 +455,181 @@ public class PredictionService : IPredictionService, IDisposable
                 return;
             }
         }
+    }
+
+    /// <summary>
+    /// Cleans up nonsensical words and phrases from the word bank
+    /// </summary>
+    public void CleanupNonsensicalEntries()
+    {
+        lock (_syncRoot)
+        {
+            var wordsToRemove = new List<WordBankEntry>();
+            var phrasesToRemove = new List<WordBankEntry>();
+
+            // Filter out nonsensical words
+            foreach (var word in _store.Words)
+            {
+                if (!IsValidWord(word.Text))
+                {
+                    wordsToRemove.Add(word);
+                }
+            }
+
+            // Filter out nonsensical phrases
+            foreach (var phrase in _store.Phrases)
+            {
+                if (!IsValidPhrase(phrase.Text))
+                {
+                    phrasesToRemove.Add(phrase);
+                }
+            }
+
+            // Remove invalid entries
+            foreach (var word in wordsToRemove)
+            {
+                _store.Words.Remove(word);
+                _wordIndex.Remove(NormalizeWord(word.Text));
+            }
+
+            foreach (var phrase in phrasesToRemove)
+            {
+                _store.Phrases.Remove(phrase);
+                _phraseIndex.Remove(NormalizePhrase(phrase.Text));
+            }
+
+            if (wordsToRemove.Count > 0 || phrasesToRemove.Count > 0)
+            {
+                ScheduleSave();
+            }
+        }
+    }
+
+    public void ClearAll()
+    {
+        lock (_syncRoot)
+        {
+            var wordCount = _store.Words.Count;
+            var phraseCount = _store.Phrases.Count;
+
+            _store.Words.Clear();
+            _store.Phrases.Clear();
+            _store.Bigrams.Clear();
+            _wordIndex.Clear();
+            _phraseIndex.Clear();
+            _bigramIndex.Clear();
+            _recentlyAccepted.Clear();
+
+            ScheduleSave();
+        }
+    }
+
+    /// <summary>
+    /// Validates if a word makes sense and should be kept
+    /// </summary>
+    private static bool IsValidWord(string word)
+    {
+        if (string.IsNullOrWhiteSpace(word))
+            return false;
+
+        // Remove leading/trailing whitespace and normalize
+        word = word.Trim();
+
+        // Length validation
+        if (word.Length < 2 || word.Length > 50)
+            return false;
+
+        // Must contain at least one letter
+        if (!word.Any(char.IsLetter))
+            return false;
+
+        // Reject words with too many special characters
+        var specialCharCount = word.Count(c => !char.IsLetterOrDigit(c) && c != '\'' && c != '-');
+        if (specialCharCount > word.Length * 0.3) // More than 30% special characters
+            return false;
+
+        // Reject patterns that look like random characters
+        if (IsRandomCharacters(word))
+            return false;
+
+        // Reject common keyboard mashes
+        if (IsKeyboardMash(word))
+            return false;
+
+        return true;
+    }
+
+    /// <summary>
+    /// Validates if a phrase makes sense and should be kept
+    /// </summary>
+    private static bool IsValidPhrase(string phrase)
+    {
+        if (string.IsNullOrWhiteSpace(phrase))
+            return false;
+
+        phrase = phrase.Trim();
+
+        // Length validation
+        if (phrase.Length < 3 || phrase.Length > 200)
+            return false;
+
+        // Must contain at least one letter
+        if (!phrase.Any(char.IsLetter))
+            return false;
+
+        // Split into words and validate each
+        var words = phrase.Split(new[] { ' ', '\t', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length < 2)
+            return false;
+
+        // Check if most words are valid
+        var validWordCount = words.Count(IsValidWord);
+        if (validWordCount < words.Length * 0.7) // At least 70% valid words
+            return false;
+
+        // Reject phrases with excessive punctuation
+        var punctuationCount = phrase.Count(c => char.IsPunctuation(c));
+        if (punctuationCount > phrase.Length * 0.4) // More than 40% punctuation
+            return false;
+
+        return true;
+    }
+
+    /// <summary>
+    /// Checks if a string appears to be random characters
+    /// </summary>
+    private static bool IsRandomCharacters(string text)
+    {
+        if (text.Length < 3)
+            return false;
+
+        // Check for repeated characters (like "aaa", "bbb")
+        var repeatedPattern = new Regex(@"(.)\1{2,}");
+        if (repeatedPattern.IsMatch(text))
+            return true;
+
+        // Check for sequential keyboard patterns
+        var sequentialPatterns = new[] { "qwerty", "asdf", "zxcv", "1234", "abcd" };
+        if (sequentialPatterns.Any(pattern => text.ToLower().Contains(pattern)))
+            return true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if a string appears to be a keyboard mash
+    /// </summary>
+    private static bool IsKeyboardMash(string text)
+    {
+        if (text.Length < 4)
+            return false;
+
+        var lowerText = text.ToLower();
+        
+        // Common keyboard mashes
+        var mashes = new[] { "asdf", "qwerty", "zxcv", "qwer", "wer", "ert", "rty", "tyu", "yui", "uio", "iop" };
+        
+        return mashes.Any(mash => lowerText.Contains(mash));
     }
 
     private void TrackRecent(string word)

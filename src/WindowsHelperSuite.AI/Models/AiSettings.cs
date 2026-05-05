@@ -17,4 +17,24 @@ public class AiSettings
 
     /// <summary>OpenAI-compatible API root, no trailing slash (e.g. https://api.openai.com/v1).</summary>
     public string ApiBaseUrl { get; set; } = "https://api.openai.com/v1";
+
+    // ── Enhanced Writer AI features ──
+
+    /// <summary>Enable AI sentence completion suggestions.</summary>
+    public bool EnableSentenceCompletion { get; set; } = true;
+
+    /// <summary>Enable AI grammar and spelling correction.</summary>
+    public bool EnableGrammarCorrection { get; set; } = true;
+
+    /// <summary>Auto-apply instant fixes for common typos.</summary>
+    public bool EnableAutoInstantFixes { get; set; } = true;
+
+    /// <summary>When true, AI learns from user's writing patterns.</summary>
+    public bool EnableContextLearning { get; set; } = true;
+
+    /// <summary>Enable style/tone variation suggestions.</summary>
+    public bool EnableStyleVariations { get; set; } = false;
+
+    /// <summary>Timeout for grammar correction calls (faster than general AI).</summary>
+    public int GrammarTimeoutMs { get; set; } = 300;
 }
