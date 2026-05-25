@@ -14,7 +14,7 @@
         Width="Auto"
         Height="Auto"
         SizeToContent="WidthAndHeight"
-        MaxWidth="864"
+        MaxWidth="780"
         UseLayoutRounding="True"
         TextOptions.TextFormattingMode="Display"
         TextOptions.TextRenderingMode="ClearType"
@@ -38,8 +38,6 @@
         <SolidColorBrush x:Key="TextMuted" Color="#608060"/>
         <SolidColorBrush x:Key="BorderColor" Color="#153A5A3A"/>
         <SolidColorBrush x:Key="BorderSubtle" Color="#0A2A3A2A"/>
-        <SolidColorBrush x:Key="AccentPurple" Color="#FF6666"/>
-        <SolidColorBrush x:Key="ContextBackground" Color="#050F1F0F"/>
         <SolidColorBrush x:Key="AccentStripe" Color="#00FF00"/>
 
         <!-- Glow effects for high-confidence suggestions -->
@@ -53,10 +51,10 @@
             <Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource BorderSubtle}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="17,14,22,14"/>
-            <Setter Property="MinWidth" Value="91"/>
-            <Setter Property="MinHeight" Value="58"/>
-            <Setter Property="FontSize" Value="19"/>
+            <Setter Property="Padding" Value="16,11,20,11"/>
+            <Setter Property="MinWidth" Value="92"/>
+            <Setter Property="MinHeight" Value="56"/>
+            <Setter Property="FontSize" Value="22"/>
             <Setter Property="FontFamily" Value="Segoe UI"/>
             <Setter Property="FontWeight" Value="Normal"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -74,9 +72,10 @@
                                     SnapsToDevicePixels="True"
                                     Opacity="0">
                                 <Border.Effect>
-                                    <DropShadowEffect Color="{DynamicResource AccentGreenColor}" 
-                                                      BlurRadius="20" 
-                                                      ShadowDepth="0" 
+                                    <DropShadowEffect x:Name="glowShadow"
+                                                      Color="#00FF00"
+                                                      BlurRadius="20"
+                                                      ShadowDepth="0"
                                                       Opacity="0"/>
                                 </Border.Effect>
                             </Border>
@@ -85,9 +84,16 @@
                                     Background="{TemplateBinding Background}"
                                     BorderBrush="{TemplateBinding BorderBrush}"
                                     BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="12"
+                                    CornerRadius="14"
                                     Padding="{TemplateBinding Padding}"
                                     SnapsToDevicePixels="True">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="#000000"
+                                                      BlurRadius="16"
+                                                      ShadowDepth="2"
+                                                      Opacity="0.38"
+                                                      Direction="270"/>
+                                </Border.Effect>
                                 <ContentPresenter HorizontalAlignment="Left"
                                                 VerticalAlignment="Center"
                                                 TextBlock.Foreground="{TemplateBinding Foreground}"/>
@@ -112,169 +118,53 @@
         <Style x:Key="SlotBadgeStyle" TargetType="Border">
             <Setter Property="Background" Value="{DynamicResource AccentGreen}"/>
             <Setter Property="CornerRadius" Value="10"/>
-            <Setter Property="Padding" Value="10,4"/>
-            <Setter Property="Margin" Value="0,0,14,0"/>
-            <Setter Property="MinWidth" Value="31"/>
-            <Setter Property="MinHeight" Value="31"/>
+            <Setter Property="Padding" Value="9,5"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
+            <Setter Property="MinWidth" Value="30"/>
+            <Setter Property="MinHeight" Value="30"/>
             <Setter Property="Height" Value="Auto"/>
             <Setter Property="HorizontalAlignment" Value="Center"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
     </Window.Resources>
 
-    <!-- Shadow wrapper -->
-    <Border Background="Transparent"
-            Margin="14">
-        <Border.Effect>
-            <DropShadowEffect Color="#000000"
-                            BlurRadius="36"
-                            ShadowDepth="8"
-                            Opacity="0.5"
-                            Direction="270"/>
-        </Border.Effect>
-
-        <Grid x:Name="OverlayRootGrid"
-              MouseEnter="OverlayRoot_MouseEnter"
-              MouseLeave="OverlayRoot_MouseLeave">
-            <!-- Main overlay border + inner glass edge -->
+    <Grid x:Name="OverlayRootGrid"
+          Background="Transparent"
+          Margin="6"
+          MouseEnter="OverlayRoot_MouseEnter"
+          MouseLeave="OverlayRoot_MouseLeave">
             <Border x:Name="OverlayBorder"
-                    Background="{DynamicResource PrimaryBackground}"
-                    BorderBrush="{DynamicResource BorderColor}"
-                    BorderThickness="1"
-                    CornerRadius="19"
-                    Padding="22,17,22,17"
-                    MinHeight="106">
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Padding="0">
 
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Title -->
-                    <TextBlock Grid.Row="0"
-                               Text="Suggestions"
-                               FontSize="13"
-                               FontWeight="SemiBold"
-                               FontFamily="Segoe UI"
-                               Foreground="{DynamicResource TextMuted}"
-                               Margin="2,0,0,10"
-                               Opacity="0.92"/>
-
-                    <!-- Accent stripe -->
-                    <Border Grid.Row="1"
-                            Background="{DynamicResource AccentStripe}"
-                            Height="4"
-                            CornerRadius="2"
-                            Margin="0,0,0,14"
-                            Opacity="0.75"/>
-
                     <TextBlock x:Name="OverlayStatusHint"
-                               Grid.Row="2"
+                               Grid.Row="0"
                                FontSize="12"
                                FontFamily="Segoe UI"
                                Foreground="#C4A35A"
                                TextWrapping="Wrap"
-                               MaxWidth="744"
-                               Margin="2,0,0,10"
+                               MaxWidth="640"
+                               Margin="2,0,0,6"
                                Visibility="Collapsed"/>
-
-                    <!-- Context mode indicator -->
-                    <Border x:Name="ContextBanner"
-                            Grid.Row="3"
-                            Background="{DynamicResource ContextBackground}"
-                            CornerRadius="10"
-                            Padding="12,7"
-                            Margin="0,0,0,14"
-                            Visibility="Collapsed">
-                        <TextBlock x:Name="ContextLabel"
-                                   FontSize="14"
-                                   FontFamily="Segoe UI"
-                                   FontWeight="SemiBold"
-                                   Foreground="{DynamicResource AccentPurple}"
-                                   HorizontalAlignment="Left"
-                                   VerticalAlignment="Center"
-                                   TextWrapping="Wrap"
-                                   MaxWidth="744"/>
-                    </Border>
 
                     <!-- Suggestions Container -->
                     <StackPanel x:Name="SuggestionsContainer"
-                                Grid.Row="4"
+                                Grid.Row="1"
                                 Orientation="Horizontal"
                                 HorizontalAlignment="Left"
                                 VerticalAlignment="Center">
                     </StackPanel>
 
-                    <!-- Footer: paging + keyboard hints -->
-                    <Border Grid.Row="5"
-                            Margin="0,14,0,0"
-                            Padding="0,12,0,0"
-                            BorderThickness="0,1,0,0"
-                            BorderBrush="{DynamicResource BorderSubtle}">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-
-                        <!-- Paging indicator -->
-                        <TextBlock x:Name="PagingIndicator"
-                                   Grid.Column="0"
-                                   Text=""
-                                   FontSize="13"
-                                   FontFamily="Segoe UI"
-                                   Foreground="{DynamicResource TextMuted}"
-                                   VerticalAlignment="Center"
-                                   Visibility="Collapsed"/>
-
-                        <!-- Speaker indicator (shown briefly when TTS plays) -->
-                        <TextBlock x:Name="SpeakerIndicator"
-                                   Grid.Column="1"
-                                   FontSize="13"
-                                   FontFamily="Segoe UI"
-                                   Foreground="{DynamicResource AccentBlue}"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"
-                                   Opacity="0"/>
-
-                        <!-- Keyboard hints -->
-                        <TextBlock Grid.Column="2"
-                                   FontSize="13"
-                                   FontFamily="Segoe UI"
-                                   Foreground="{DynamicResource TextMuted}"
-                                   VerticalAlignment="Center"
-                                   TextWrapping="Wrap"
-                                   MaxWidth="624">
-                            <Run Text="Press " Foreground="{DynamicResource TextSecondary}"/>
-                            <Run Text="1" FontWeight="Bold" Foreground="{DynamicResource AccentGreen}"/>
-                            <Run Text="–" Foreground="{DynamicResource TextSecondary}"/>
-                            <Run Text="9" FontWeight="Bold" Foreground="{DynamicResource AccentGreen}"/>
-                            <Run Text=" pick · " Foreground="{DynamicResource TextSecondary}"/>
-                            <Run Text="0" FontWeight="Bold" Foreground="{DynamicResource AccentBlue}"/>
-                            <Run Text=" next · " Foreground="{DynamicResource TextSecondary}"/>
-                            <Run Text="-" FontWeight="Bold" Foreground="{DynamicResource AccentBlue}"/>
-                            <Run Text=" prev · " Foreground="{DynamicResource TextSecondary}"/>
-                            <Run Text="←" FontWeight="Bold" Foreground="{DynamicResource AccentBlue}"/>
-                            <Run Text=" del word · " Foreground="{DynamicResource TextSecondary}"/>
-                            <Run Text="↑↓" FontWeight="Bold" Foreground="{DynamicResource AccentBlue}"/>
-                            <Run Text=" highlight · " Foreground="{DynamicResource TextSecondary}"/>
-                            <Run Text="Enter" FontWeight="Bold" Foreground="{DynamicResource AccentGreen}"/>
-                            <Run Text=" pick · " Foreground="{DynamicResource TextSecondary}"/>
-                            <Run Text="Shift+Enter" FontWeight="SemiBold" Foreground="{DynamicResource TextMuted}"/>
-                            <Run Text=" newline · " Foreground="{DynamicResource TextSecondary}"/>
-                            <Run Text="Esc" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondary}"/>
-                            <Run Text=" close · " Foreground="{DynamicResource TextSecondary}"/>
-                            <Run Text="`" FontWeight="Bold" Foreground="{DynamicResource AccentPurple}"/>
-                            <Run Text=" wake" Foreground="{DynamicResource TextSecondary}"/>
-                        </TextBlock>
-                    </Grid>
-                    </Border>
+                    <!-- Kept for code-behind; not shown (footer removed) -->
+                    <TextBlock x:Name="PagingIndicator" Grid.Row="1" Visibility="Collapsed" Height="0"/>
+                    <TextBlock x:Name="SpeakerIndicator" Grid.Row="1" Visibility="Collapsed" Height="0"/>
                 </Grid>
             </Border>
 
@@ -321,6 +211,5 @@
                     </ControlTemplate>
                 </Button.Template>
             </Button>
-        </Grid>
-    </Border>
+    </Grid>
 </Window>

@@ -6,6 +6,12 @@ public interface IOverlayService
 {
     void ShowSuggestions(IReadOnlyList<SuggestionItem> suggestions);
     void HideSuggestions();
+
+    /// <summary>True when the cursor is over the visible overlay window (screen coordinates).</summary>
+    bool IsCursorOverOverlay();
+
+    /// <summary>Moves the overlay near the current caret without refreshing suggestion content.</summary>
+    void RepositionAtCaret();
     /// <param name="contextSummary">Short hint (e.g. completing "x" after "y").</param>
     /// <param name="fullSentenceWords">All words in the current sentence from the writer buffer (optional).</param>
     void SetContextMode(string? contextSummary, string? fullSentenceWords = null);
@@ -14,6 +20,8 @@ public interface IOverlayService
     void SetOverlayStatusHint(string? message);
     void MoveToNextPage();
     void MoveToPreviousPage();
+    /// <summary>Toggle overlay between horizontal and vertical suggestion layout.</summary>
+    void ToggleHorizontalVerticalLayout();
     /// <summary>Moves keyboard highlight among on-page suggestions (-1 = up/previous, +1 = down/next).</summary>
     void MoveSuggestionHighlight(int delta);
 

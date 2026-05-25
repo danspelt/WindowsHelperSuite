@@ -7,6 +7,10 @@ public class WriterSettings
     public int MaxSuggestions { get; set; } = 9;
     public int DebounceTimeMs { get; set; } = 150;
     public bool FollowCaret { get; set; } = true;
+
+    /// <summary>When true, Writer is active on startup without pressing Wake Writer.</summary>
+    public bool StartAwake { get; set; }
+
     public string DockPosition { get; set; } = "BottomCenter";
 
     /// <summary>Capitalize sentence starts after . ! ? and at beginning of text (insert, space, paste).</summary>

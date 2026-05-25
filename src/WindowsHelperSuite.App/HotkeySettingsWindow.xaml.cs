@@ -36,7 +36,7 @@ public partial class HotkeySettingsWindow : Window
     private double _pendingOpacity;
     private bool _pendingLargeText;
     private OverlayLayout _pendingLayout;
-    private WriterOverlayCaretPlacement _pendingOverlayCaretPlacement = WriterOverlayCaretPlacement.Auto;
+    private WriterOverlayCaretPlacement _pendingOverlayCaretPlacement = WriterOverlayCaretPlacement.Above;
     private WriterOverlayScreenPreference _pendingOverlayScreenPreference = WriterOverlayScreenPreference.CurrentScreen;
     private int _pendingOverlayFadeMs = 110;
     private string _pendingAccent = "#4ADE80";
@@ -180,7 +180,7 @@ public partial class HotkeySettingsWindow : Window
         _pendingFontSize = Math.Clamp(ui.FontSize, 8, 36);
         _pendingFontFamily = string.IsNullOrWhiteSpace(ui.FontFamily) ? "Segoe UI" : ui.FontFamily;
         _pendingFontWeight = string.IsNullOrWhiteSpace(ui.FontWeight) ? "SemiBold" : ui.FontWeight;
-        _pendingOpacity  = Math.Clamp(ui.Opacity * 100, 10, 100);
+        _pendingOpacity  = Math.Clamp(ui.Opacity * 100, 8, 100);
         _pendingLargeText = ui.LargeTextMode;
         _pendingLayout = ui.Layout;
         _pendingOverlayCaretPlacement = ui.OverlayCaretPlacement;
@@ -409,6 +409,8 @@ public partial class HotkeySettingsWindow : Window
             WriterAutoShow.Unchecked += (_, _) => _pendingWriter.AutoShowSuggestions = false;
             WriterFollowCaret.Checked += (_, _) => _pendingWriter.FollowCaret = true;
             WriterFollowCaret.Unchecked += (_, _) => _pendingWriter.FollowCaret = false;
+            WriterStartAwake.Checked += (_, _) => _pendingWriter.StartAwake = true;
+            WriterStartAwake.Unchecked += (_, _) => _pendingWriter.StartAwake = false;
             WriterManualKeyBox.TextChanged += (_, _) => _pendingWriter.ManualTriggerKey = WriterManualKeyBox.Text.Trim();
             WriterDockBox.TextChanged += (_, _) => _pendingWriter.DockPosition = WriterDockBox.Text.Trim();
             WriterMaxSugSlider.ValueChanged += (_, _) =>
@@ -430,6 +432,7 @@ public partial class HotkeySettingsWindow : Window
 
         WriterAutoShow.IsChecked = _pendingWriter.AutoShowSuggestions;
         WriterFollowCaret.IsChecked = _pendingWriter.FollowCaret;
+        WriterStartAwake.IsChecked = _pendingWriter.StartAwake;
         WriterManualKeyBox.Text = _pendingWriter.ManualTriggerKey;
         WriterDockBox.Text = _pendingWriter.DockPosition;
         WriterMaxSugSlider.Value = Math.Clamp(_pendingWriter.MaxSuggestions, 3, 15);
@@ -891,7 +894,7 @@ public partial class HotkeySettingsWindow : Window
                 _pendingFontSize   = 14;
                 _pendingFontFamily = "Segoe UI";
                 _pendingFontWeight = "SemiBold";
-                _pendingOpacity    = 100;
+                _pendingOpacity    = 42;
                 _pendingLargeText  = false;
                 _pendingLayout     = OverlayLayout.Vertical;
                 _pendingOverlayCaretPlacement = WriterOverlayCaretPlacement.Auto;
@@ -912,7 +915,7 @@ public partial class HotkeySettingsWindow : Window
                     if (ci.Content is string s && s.Equals(_pendingFontWeight, StringComparison.OrdinalIgnoreCase))
                     { FontWeightCombo.SelectedItem = ci; break; }
                 OpacitySlider.Value  = _pendingOpacity;
-                OpacityLabel.Text    = "100%";
+                OpacityLabel.Text    = "42%";
                 LargeTextCheck.IsChecked   = false;
                 LayoutAuto.IsChecked       = false;
                 LayoutVertical.IsChecked   = true;
@@ -994,7 +997,7 @@ public partial class HotkeySettingsWindow : Window
         ui.FontSize               = _pendingFontSize;
         ui.FontFamily             = _pendingFontFamily;
         ui.FontWeight             = _pendingFontWeight;
-        ui.Opacity                = Math.Clamp(_pendingOpacity / 100.0, 0.10, 1.0);
+        ui.Opacity                = Math.Clamp(_pendingOpacity / 100.0, 0.08, 1.0);
         ui.LargeTextMode          = _pendingLargeText;
         ui.Layout                 = _pendingLayout;
         ui.OverlayCaretPlacement  = _pendingOverlayCaretPlacement;

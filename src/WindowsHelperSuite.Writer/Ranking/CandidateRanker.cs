@@ -18,6 +18,7 @@ public sealed class CandidateRanker
     {
         var token = request.CurrentToken?.Trim() ?? "";
         var prev = request.PreviousCompletedWord?.Trim() ?? "";
+        var postSpace = string.IsNullOrWhiteSpace(token) && prev.Length > 0;
         foreach (var candidate in candidates)
         {
             double score = candidate.BaseScore * TrustForSource(candidate.Source);
@@ -25,7 +26,7 @@ public sealed class CandidateRanker
             if (prev.Length >= 2 && candidate.IsPhrase &&
                 candidate.Text.StartsWith(prev + " ", StringComparison.OrdinalIgnoreCase))
             {
-                score += 0.35;
+                score += postSpace ? 0.2 : 0.35;
             }
 
             if (!string.IsNullOrWhiteSpace(token) &&
@@ -36,24 +37,29 @@ public sealed class CandidateRanker
 
             if (!string.IsNullOrWhiteSpace(token) &&
                 candidate.Text.StartsWith(token, StringComparison.Ordinal) &&
-                !candidate.Text.StartsWith(token, StringComparison.Ordinal))
+                !candidate.Text.StartsWith(token, StringComparison.OrdinalIgnoreCase))
             {
                 score -= 0.15;
             }
 
+            if (postSpace && !candidate.IsPhrase && !candidate.Text.Contains(' ', StringComparison.Ordinal))
+            {
+                score += 2.5;
+            }
+
             if (candidate.IsPhrase)
             {
-                score += 0.4;
+                score += postSpace ? 0.15 : 0.4;
             }
 
             if (request.Context.TypingMode == WriterTypingMode.Chat && candidate.IsPhrase)
             {
-                score += 0.3;
+                score += postSpace ? 0.15 : 0.3;
             }
 
             if (request.Context.TypingMode == WriterTypingMode.Email && candidate.IsPhrase)
             {
-                score += 0.2;
+                score += postSpace ? 0.1 : 0.2;
             }
 
             if (request.Context.TypingMode == WriterTypingMode.Code && candidate.IsPhrase)
@@ -107,6 +113,11 @@ public sealed class CandidateRanker
         if (s.Contains("correction", StringComparison.OrdinalIgnoreCase))
         {
             t *= _options.CorrectionTrust;
+        }
+
+        if (s.Contains("next-word", StringComparison.OrdinalIgnoreCase))
+        {
+            t *= _options.NextWordTrust;
         }
 
         return t;

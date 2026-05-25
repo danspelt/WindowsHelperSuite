@@ -169,9 +169,9 @@ public partial class OverlayWindow : Window
         var spaceLeft = caretX - screenLeft;
 
         // Estimate overlay sizes (approximate)
-        const double horizontalHeight = 80;
-        const double verticalWidth = 120;
-        const double verticalHeight = 400;
+        const double horizontalHeight = 82;
+        const double verticalWidth = 125;
+        const double verticalHeight = 420;
 
         // Score each layout option based on available space
         var horizontalScore = 0;
@@ -271,8 +271,7 @@ public partial class OverlayWindow : Window
         for (var i = 0; i < n; i++)
         {
             var button = buttons[i];
-            button.ApplyTemplate();
-            if (button.Template?.FindName("border", button) is not System.Windows.Controls.Border border)
+            if (GetSuggestionBorder(button) is not System.Windows.Controls.Border border)
             {
                 continue;
             }
@@ -284,55 +283,69 @@ public partial class OverlayWindow : Window
         }
     }
 
+    private System.Windows.Controls.Border? GetSuggestionBorder(Button button)
+    {
+        if (button.Template?.FindName("border", button) is System.Windows.Controls.Border existing)
+        {
+            return existing;
+        }
+
+        if (!button.IsInitialized)
+        {
+            return null;
+        }
+
+        button.ApplyTemplate();
+        return button.Template?.FindName("border", button) as System.Windows.Controls.Border;
+    }
+
+    private System.Windows.Controls.Border? GetGlowBorder(Button button)
+    {
+        if (button.Template?.FindName("glowBorder", button) is System.Windows.Controls.Border existing)
+        {
+            return existing;
+        }
+
+        if (!button.IsInitialized)
+        {
+            return null;
+        }
+
+        button.ApplyTemplate();
+        return button.Template?.FindName("glowBorder", button) as System.Windows.Controls.Border;
+    }
+
     private void UpdatePagingIndicator()
     {
-        if (_totalPages > 1)
-        {
-            PagingIndicator.Text = $"Page {_currentPage + 1} of {_totalPages}";
-            PagingIndicator.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            PagingIndicator.Visibility = Visibility.Collapsed;
-        }
+        // Footer removed — paging still works via hotkeys; no on-screen page label.
     }
+
+    public OverlayLayout CurrentLayout => _currentLayout;
 
     public void SetLayout(OverlayLayout layout)
     {
         _currentLayout = layout;
         if (layout != OverlayLayout.Auto)
         {
-            // Manual layout selection - don't lock, just apply
+            _lockedLayout = layout;
+            _layoutLockTime = DateTime.Now;
+        }
+        else
+        {
             _lockedLayout = null;
         }
+
         ApplyLayout();
+        if (IsVisible && _currentSuggestions.Count > 0)
+        {
+            RenderSuggestions();
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, ApplySuggestionHighlight);
+        }
     }
 
     public void SetContextMode(string? contextSummary, string? fullSentenceWords = null)
     {
-        if (string.IsNullOrWhiteSpace(contextSummary) && string.IsNullOrWhiteSpace(fullSentenceWords))
-        {
-            ContextBanner.Visibility = Visibility.Collapsed;
-            ContextBanner.ToolTip = null;
-            return;
-        }
-
-        var lines = new List<string>();
-        if (!string.IsNullOrWhiteSpace(contextSummary))
-        {
-            lines.Add(contextSummary.Trim());
-        }
-
-        if (!string.IsNullOrWhiteSpace(fullSentenceWords))
-        {
-            lines.Add($"Sentence: {fullSentenceWords.Trim()}");
-        }
-
-        ContextLabel.Text = string.Join(Environment.NewLine, lines);
-        ContextBanner.ToolTip = string.IsNullOrWhiteSpace(fullSentenceWords)
-            ? contextSummary?.Trim()
-            : fullSentenceWords.Trim();
-        ContextBanner.Visibility = Visibility.Visible;
+        // Sentence/context banner removed from overlay UI.
     }
 
     public void HideSuggestions()
@@ -410,40 +423,19 @@ public partial class OverlayWindow : Window
 
         stackPanel.Children.Add(badgeBorder);
 
-        var textPanel = new StackPanel
-        {
-            Orientation = Orientation.Vertical,
-            VerticalAlignment = VerticalAlignment.Center,
-            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 298 : 432
-        };
-
         var textBlock = new TextBlock
         {
             Text = suggestion.DisplayText,
-            FontSize = 20,
+            FontSize = 22,
             FontFamily = new FontFamily("Segoe UI"),
             FontWeight = FontWeights.SemiBold,
             Foreground = (Brush)FindResource("TextPrimary"),
             VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
-            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 298 : 432
+            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 290 : 420
         };
 
-        textPanel.Children.Add(textBlock);
-
-        var kindLabel = new TextBlock
-        {
-            Text = GetSuggestionKindLabel(suggestion.Kind),
-            FontSize = 13,
-            FontFamily = new FontFamily("Segoe UI"),
-            FontWeight = FontWeights.SemiBold,
-            Foreground = (Brush)FindResource("TextSecondary"),
-            Margin = new Thickness(0, 3, 0, 0),
-            TextWrapping = TextWrapping.NoWrap
-        };
-
-        textPanel.Children.Add(kindLabel);
-        stackPanel.Children.Add(textPanel);
+        stackPanel.Children.Add(textBlock);
 
         var button = new Button
         {
@@ -451,7 +443,7 @@ public partial class OverlayWindow : Window
             Tag = suggestion.Slot,
             Style = (Style)FindResource("SuggestionButtonStyle"),
             Opacity = 0,
-            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 360 : 528,
+            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 330 : 460,
             ToolTip = BuildSuggestionToolTip(suggestion),
             Margin = _currentLayout == OverlayLayout.Horizontal
                 ? new Thickness(5, 0, 5, 0)
@@ -504,8 +496,7 @@ public partial class OverlayWindow : Window
         {
             if (child.Tag is int btnSlot && btnSlot == slot)
             {
-                var border = child.Template?.FindName("border", child) as System.Windows.Controls.Border;
-                if (border != null)
+                if (GetSuggestionBorder(child) is System.Windows.Controls.Border border)
                 {
                     var flash = new ColorAnimation(
                         Color.FromRgb(0x4A, 0xDE, 0x80), // AccentGreen
@@ -527,15 +518,7 @@ public partial class OverlayWindow : Window
     /// </summary>
     public void ShowSpeakerIndicator(string spokenText)
     {
-        var display = spokenText.Length > 20 ? spokenText[..20] + "…" : spokenText;
-        SpeakerIndicator.Text = $"\U0001F50A {display}";
-        SpeakerIndicator.Opacity = 1.0;
-
-        var fadeOut = new DoubleAnimation(1.0, 0.0, TimeSpan.FromMilliseconds(800))
-        {
-            BeginTime = TimeSpan.FromMilliseconds(400)
-        };
-        SpeakerIndicator.BeginAnimation(OpacityProperty, fadeOut);
+        // Footer removed — TTS still plays; no speaker chip in the overlay.
     }
 
     public void HandleNextPage()
@@ -600,8 +583,8 @@ public partial class OverlayWindow : Window
         var fieldBottom = exclusion.Bottom;
         var fieldTop = exclusion.Top;
 
-        const double sideGap = 20; // Increased gap for better separation
-        const double placementGap = 15; // Increased placement gap
+        const double sideGap = 12;
+        const double placementGap = 10;
         double left = caretX;
         double top;
         double besideL;
@@ -627,18 +610,18 @@ public partial class OverlayWindow : Window
             {
                 top = fieldTop - windowHeight - placementGap;
             }
-            else if (spaceBelowField >= windowHeight)
-            {
-                top = fieldBottom + placementGap;
-            }
             else if (TryDockBesideExclusion(exclusion, windowWidth, windowHeight, screenLeft, screenTop, screenRight, screenBottom, sideGap, out besideL, out besideT))
             {
                 left = besideL;
                 top = besideT;
             }
+            else if (spaceBelowField >= windowHeight)
+            {
+                top = fieldBottom + placementGap;
+            }
             else
             {
-                top = screenBottom - windowHeight - 8;
+                top = Math.Max(screenTop, fieldTop - windowHeight - placementGap);
             }
         }
         else if (preferredPosition == ScreenPosition.Below)
@@ -663,45 +646,26 @@ public partial class OverlayWindow : Window
         }
         else
         {
-            // Enhanced Auto positioning — prioritize side positioning to avoid text field coverage
+            // Auto (Writer default): place above the text field so the caret line stays visible
             var canPlaceAbove = spaceAboveField >= windowHeight;
             var canPlaceBelow = spaceBelowField >= windowHeight;
-            
-            // First, try side positioning (left/right) as it's less likely to interfere with text input
-            if (TryDockBesideExclusion(exclusion, windowWidth, windowHeight, screenLeft, screenTop, screenRight, screenBottom, sideGap, out besideL, out besideT))
+
+            if (canPlaceAbove)
             {
-                left = besideL;
-                top = besideT;
-            }
-            // If side positioning not available, try vertical positioning
-            else if (canPlaceAbove && canPlaceBelow)
-            {
-                // Choose the position with more space, but prefer below for typical typing scenarios
-                if (spaceBelowField > spaceAboveField + 40) // Increased threshold for stronger preference
-                {
-                    top = fieldBottom + placementGap;
-                }
-                else if (spaceAboveField > spaceBelowField + 40)
-                {
-                    top = fieldTop - windowHeight - placementGap;
-                }
-                else
-                {
-                    top = fieldBottom + placementGap; // Default to below when equal
-                }
+                top = fieldTop - windowHeight - placementGap;
             }
             else if (canPlaceBelow)
             {
                 top = fieldBottom + placementGap;
             }
-            else if (canPlaceAbove)
+            else if (TryDockBesideExclusion(exclusion, windowWidth, windowHeight, screenLeft, screenTop, screenRight, screenBottom, sideGap, out besideL, out besideT))
             {
-                top = fieldTop - windowHeight - placementGap;
+                left = besideL;
+                top = besideT;
             }
             else
             {
-                // Last resort: position at bottom of screen with maximum gap from text field
-                top = screenBottom - windowHeight - 20; // Increased bottom margin
+                top = Math.Max(screenTop, fieldTop - windowHeight - placementGap);
             }
         }
 
@@ -918,14 +882,11 @@ public partial class OverlayWindow : Window
         int overlayFadeTransitionMs = 110)
     {
         _overlayFadeTransitionMs = Math.Clamp(overlayFadeTransitionMs, 0, 600);
-        var baseFontSize = largeTextMode ? Math.Max(fontSize * 1.5, 24) : Math.Max(fontSize, 19);
-        // Opacity setting drives *surface* alpha so the caret / host text field shows through the panel.
-        // Window stays at 1 so suggestion text and accents stay sharp (whole-window opacity mutes everything).
-        var userOp = Math.Clamp(opacity, 0.10, 1.0);
+        var baseFontSize = largeTextMode ? Math.Max(fontSize * 1.35, 24) : Math.Max(fontSize, 20);
+        // Opacity applies to word bubbles only; the overlay shell is always fully transparent.
+        var userOp = Math.Clamp(opacity, 0.08, 1.0);
         Opacity = 1.0;
-        var shellAlpha = userOp;
-        var cardAlpha = Math.Min(1.0, userOp + 0.28);
-        var borderAlpha = Math.Min(1.0, userOp + 0.12);
+        var cardAlpha = userOp * 0.72;
 
         var ff = new System.Windows.Media.FontFamily(
             string.IsNullOrWhiteSpace(fontFamily) ? "Segoe UI" : fontFamily);
@@ -934,10 +895,9 @@ public partial class OverlayWindow : Window
         ApplyColorResource("AccentGreen", accentColor);
         ApplyColorResource("AccentStripe", accentColor);
         ApplyColorResource("AccentGreenDim", DimColor(accentColor, 0.35));
-        ApplyTranslucentPaint("PrimaryBackground", bgColor, shellAlpha);
-        ApplyTranslucentPaint("ContextBackground", "#16171F", shellAlpha);
-        ApplyTranslucentPaint("BorderColor", "#2A2B36", borderAlpha);
-        ApplyTranslucentPaint("BorderSubtle", "#222330", borderAlpha);
+        ApplyTranslucentPaint("PrimaryBackground", bgColor, 0);
+        ApplyTranslucentPaint("BorderColor", "#2A2B36", 0);
+        ApplyTranslucentPaint("BorderSubtle", "#222330", 0);
         ApplyTranslucentPaint("CardBackground", cardColor, cardAlpha);
         ApplyTranslucentPaint("SecondaryBackground", DimColor(cardColor, 0.72), cardAlpha);
         ApplyTranslucentPaint("CardHover", BlendWithWhite(cardColor, 0.08), cardAlpha);
@@ -950,30 +910,40 @@ public partial class OverlayWindow : Window
             child.FontSize = baseFontSize;
             child.FontFamily = ff;
             child.FontWeight = fw;
-            var stackPanel = child.Content as StackPanel;
-            if (stackPanel?.Children.Count > 1 && stackPanel.Children[1] is StackPanel textPanel)
+            if (child.Content is StackPanel stackPanel
+                && stackPanel.Children.Count > 1
+                && stackPanel.Children[1] is TextBlock textBlock)
             {
-                if (textPanel.Children.Count > 0 && textPanel.Children[0] is TextBlock textBlock)
-                {
-                    textBlock.FontSize = baseFontSize;
-                    textBlock.FontFamily = ff;
-                    textBlock.FontWeight = fw;
-                }
-
-                if (textPanel.Children.Count > 1 && textPanel.Children[1] is TextBlock detailText)
-                {
-                    detailText.FontSize = Math.Max(baseFontSize - 5, 11);
-                    detailText.FontFamily = ff;
-                }
+                textBlock.FontSize = baseFontSize;
+                textBlock.FontFamily = ff;
+                textBlock.FontWeight = fw;
             }
 
-            child.MinHeight = largeTextMode ? 77 : 58;
+            child.MinHeight = largeTextMode ? 70 : 56;
+        }
+    }
+
+    /// <summary>Whether screen coordinates (physical pixels) fall inside this window.</summary>
+    public bool ContainsScreenPoint(int screenX, int screenY)
+    {
+        if (!IsVisible)
+        {
+            return false;
         }
 
-        ContextLabel.FontSize = Math.Max(baseFontSize - 4, 12);
-        ContextLabel.FontFamily = ff;
-        PagingIndicator.FontSize = Math.Max(baseFontSize - 6, 11);
-        SpeakerIndicator.FontSize = Math.Max(baseFontSize - 6, 11);
+        try
+        {
+            var local = PointFromScreen(new Point(screenX, screenY));
+            const double pad = 10;
+            return local.X >= -pad
+                   && local.Y >= -pad
+                   && local.X <= ActualWidth + pad
+                   && local.Y <= ActualHeight + pad;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     // ── Hover-reveal close button ──
@@ -1024,11 +994,17 @@ public partial class OverlayWindow : Window
     {
         try
         {
-            var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
-            Resources[key] = new System.Windows.Media.SolidColorBrush(color);
-            Resources[$"{key}Color"] = color;
+            var color = (Color)ColorConverter.ConvertFromString(hex);
+            Resources[key] = new SolidColorBrush(color);
+            if (Resources.Contains($"{key}Color"))
+            {
+                Resources[$"{key}Color"] = color;
+            }
         }
-        catch { }
+        catch
+        {
+            // keep defaults from XAML
+        }
     }
 
     /// <summary>RGB from <paramref name="hex"/> with A = round(255 × <paramref name="alpha01"/>).</summary>
@@ -1037,7 +1013,7 @@ public partial class OverlayWindow : Window
         try
         {
             var parsed = (Color)ColorConverter.ConvertFromString(hex);
-            var a = (byte)Math.Round(255.0 * Math.Clamp(alpha01, 0.08, 1.0));
+            var a = (byte)Math.Round(255.0 * Math.Clamp(alpha01, 0.04, 1.0));
             var color = Color.FromArgb(a, parsed.R, parsed.G, parsed.B);
             Resources[key] = new SolidColorBrush(color);
             Resources[$"{key}Color"] = color;
@@ -1079,18 +1055,6 @@ public partial class OverlayWindow : Window
         }
 
         return $"Key {suggestion.Slot} — insert \"{t}\"";
-    }
-
-    private static string GetSuggestionKindLabel(SuggestionKind kind)
-    {
-        return kind switch
-        {
-            SuggestionKind.PhraseCompletion => "Phrase",
-            SuggestionKind.NextWord => "Next word",
-            SuggestionKind.UserHistory => "From history",
-            SuggestionKind.AiSuggestion => "AI",
-            _ => "Word"
-        };
     }
 
     private void AnimateOverlayRefresh()
@@ -1163,8 +1127,7 @@ public partial class OverlayWindow : Window
 
         Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
         {
-            button.ApplyTemplate();
-            if (button.Template?.FindName("glowBorder", button) is not System.Windows.Controls.Border glowBorder)
+            if (GetGlowBorder(button) is not System.Windows.Controls.Border glowBorder)
             {
                 return;
             }
@@ -1172,6 +1135,11 @@ public partial class OverlayWindow : Window
             glowBorder.Opacity = 1;
             if (glowBorder.Effect is DropShadowEffect glowEffect)
             {
+                if (Resources["AccentGreenColor"] is Color accent)
+                {
+                    glowEffect.Color = accent;
+                }
+
                 glowEffect.BlurRadius = blurRadius;
                 glowEffect.Opacity = opacity;
 

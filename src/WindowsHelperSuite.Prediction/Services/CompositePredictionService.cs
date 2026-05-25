@@ -16,12 +16,15 @@ namespace WindowsHelperSuite.Prediction.Services;
 /// </summary>
 public sealed class CompositePredictionService : CoreInterfaces.IPredictionService, IDisposable
 {
+    private const int PostSpaceNextWordQuota = 4;
+
     private readonly PredictionService _wordBank;
     private readonly global::WindowsHelperSuite.Writer.Abstractions.IPredictionService _writerEngine;
     private readonly JsonTypingModelStore _typingStores;
     private readonly JsonUserLanguageModelStore _languageStore;
     private readonly HttpClient _httpClient;
     private readonly Func<CoreWriter.WriterContextSnapshot> _getWriterSnapshot;
+    private readonly Func<WriterSettings>? _getWriterSettings;
     private bool _disposed;
 
     public IUserLanguageModelStore UserLanguageStore => _languageStore;
@@ -34,16 +37,19 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
         HttpClient? httpClient = null)
     {
         _getWriterSnapshot = getWriterSnapshot;
+        _getWriterSettings = getWriterSettings;
         _httpClient = httpClient ?? new HttpClient();
         _typingStores = new JsonTypingModelStore();
         _languageStore = new JsonUserLanguageModelStore(_typingStores);
         _wordBank = new PredictionService(typingModel, getWriterSettings);
         var llm = localLlmOptions ?? new LocalLlmOptions();
+        var nextLookup = new WordBankNextWordLookup(_wordBank);
         _writerEngine = global::WindowsHelperSuite.Writer.Services.WriterPredictionBootstrap.CreateDefaultEngine(
             typingModel,
             _typingStores,
             llm,
-            _httpClient);
+            _httpClient,
+            nextWordLookup: nextLookup);
     }
 
     public void NotifySentenceCommitted(string sentence)
@@ -58,6 +64,7 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
         CoreWriter.WriterContextSnapshot writerContext = default)
     {
         var token = currentWord ?? "";
+        var maxSlots = Math.Clamp(_getWriterSettings?.Invoke().MaxSuggestions ?? 9, 3, 15);
         var sentence = string.IsNullOrWhiteSpace(context)
             ? token
             : string.IsNullOrWhiteSpace(token)
@@ -75,26 +82,33 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
             CurrentToken = token,
             CaretIndex = full.Length,
             Context = engineCtx,
-            MaxSuggestions = 9,
+            MaxSuggestions = maxSlots,
             PreferLocalOnly = true
         };
 
         var result = _writerEngine.PredictAsync(request, CancellationToken.None).GetAwaiter().GetResult();
-        var engineItems = MapEngineToSuggestionItems(result, context ?? "", token);
+        var engineItems = MapEngineToSuggestionItems(result, context ?? "", token, maxSlots);
         var wordBankItems = _wordBank.GetSuggestions(context ?? "", token, writerContext);
-        return MergeSuggestionLists(engineItems, wordBankItems, maxSlots: 9);
+        var postSpace = string.IsNullOrWhiteSpace(token) && !string.IsNullOrWhiteSpace(previousCompleted);
+        return MergeSuggestionLists(engineItems, wordBankItems, maxSlots, postSpace);
     }
 
-    /// <summary>Merges personalized engine hits with word-bank next-word / phrase / starter lists (critical after Space with an empty token).</summary>
-    private static List<SuggestionItem> MergeSuggestionLists(
-        List<SuggestionItem> engineFirst,
+    /// <summary>Merges engine and word-bank lists; after Space, word-bank next-word hits are prioritized.</summary>
+    public static List<SuggestionItem> MergeSuggestionLists(
+        List<SuggestionItem> engineItems,
         IReadOnlyList<SuggestionItem> wordBank,
-        int maxSlots)
+        int maxSlots,
+        bool postSpace)
     {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var merged = new List<SuggestionItem>();
 
-        void AddUnique(IEnumerable<SuggestionItem> items, bool fromEngine)
+        static bool IsNextWordSlot(SuggestionItem s) =>
+            s.Kind == SuggestionKind.NextWord
+            || (!s.DisplayText.Contains(' ', StringComparison.Ordinal)
+                && s.Kind is SuggestionKind.WordCompletion or SuggestionKind.UserHistory);
+
+        void AddUnique(IEnumerable<SuggestionItem> items, bool fromEngine, double scoreScale = 1.0)
         {
             foreach (var s in items)
             {
@@ -110,7 +124,7 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
                     DisplayText = s.DisplayText,
                     InsertText = s.InsertText,
                     Kind = s.Kind,
-                    Score = fromEngine ? s.Score : s.Score * 0.92
+                    Score = (fromEngine ? s.Score : s.Score * 0.92) * scoreScale
                 });
 
                 if (merged.Count >= maxSlots)
@@ -120,8 +134,24 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
             }
         }
 
-        AddUnique(engineFirst, fromEngine: true);
-        AddUnique(wordBank, fromEngine: false);
+        if (postSpace)
+        {
+            var bankNext = wordBank.Where(IsNextWordSlot).OrderByDescending(s => s.Score);
+            var bankOther = wordBank.Where(s => !IsNextWordSlot(s)).OrderByDescending(s => s.Score);
+            var engineNext = engineItems.Where(IsNextWordSlot).OrderByDescending(s => s.Score);
+            var engineOther = engineItems.Where(s => !IsNextWordSlot(s)).OrderByDescending(s => s.Score);
+
+            AddUnique(bankNext, fromEngine: false);
+            AddUnique(engineNext.Take(Math.Max(0, PostSpaceNextWordQuota - merged.Count)), fromEngine: true);
+            AddUnique(bankOther, fromEngine: false);
+            AddUnique(engineOther, fromEngine: true);
+            AddUnique(engineNext, fromEngine: true, scoreScale: 0.9);
+        }
+        else
+        {
+            AddUnique(engineItems, fromEngine: true);
+            AddUnique(wordBank, fromEngine: false);
+        }
 
         for (var i = 0; i < merged.Count; i++)
         {
@@ -134,13 +164,14 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
     private static List<SuggestionItem> MapEngineToSuggestionItems(
         PredictionResult result,
         string context,
-        string token)
+        string token,
+        int maxSlots)
     {
         var list = new List<SuggestionItem>();
         var slot = 1;
         foreach (var c in result.Suggestions)
         {
-            if (slot > 9)
+            if (slot > maxSlots)
             {
                 break;
             }
@@ -160,6 +191,10 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
             if (c.Source.Contains("local-llm", StringComparison.OrdinalIgnoreCase))
             {
                 kind = SuggestionKind.AiSuggestion;
+            }
+            else if (c.Source.Contains("next-word", StringComparison.OrdinalIgnoreCase))
+            {
+                kind = string.IsNullOrWhiteSpace(token) ? SuggestionKind.NextWord : SuggestionKind.WordCompletion;
             }
             else if (c.Source.Contains("phrase-memory", StringComparison.OrdinalIgnoreCase) ||
                      c.Source.Contains("recency", StringComparison.OrdinalIgnoreCase))
@@ -194,7 +229,8 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
 
     public void LearnBigram(string previousWord, string currentWord) => _wordBank.LearnBigram(previousWord, currentWord);
 
-    public void LearnBigramWithContext(string? wordBefore, string previousWord, string currentWord) => _wordBank.LearnBigramWithContext(wordBefore, previousWord, currentWord);
+    public void LearnBigramWithContext(string? wordBefore, string previousWord, string currentWord) =>
+        _wordBank.LearnBigramWithContext(wordBefore, previousWord, currentWord);
 
     public void AcceptWord(string word)
     {

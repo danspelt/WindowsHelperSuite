@@ -19,4 +19,18 @@ public static class WriterSentenceContext
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return parts.Length > 0 ? parts[^1] : string.Empty;
     }
+
+    /// <summary>Second-to-last completed word in a space-delimited buffer (for trigram next-word lookup).</summary>
+    public static string WordBeforeLast(string sentenceOrContext)
+    {
+        if (string.IsNullOrWhiteSpace(sentenceOrContext))
+        {
+            return string.Empty;
+        }
+
+        var parts = sentenceOrContext.Trim().Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length >= 2 ? parts[^2] : string.Empty;
+    }
 }

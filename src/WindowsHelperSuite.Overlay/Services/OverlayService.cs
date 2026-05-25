@@ -78,6 +78,8 @@ public class OverlayService : IOverlayService, IDisposable
         PositionAtCaret();
     }
 
+    public void RepositionAtCaret() => PositionAtCaret();
+
     public void HideSuggestions()
     {
         RunOnUiThread(() =>
@@ -88,6 +90,35 @@ public class OverlayService : IOverlayService, IDisposable
             _overlayWindow?.ResetLayoutLock();
         });
         _loggingService.Debug("Overlay hidden, layout lock reset");
+    }
+
+    public bool IsCursorOverOverlay()
+    {
+        if (!Win32Cursor.TryGetPosition(out var screenX, out var screenY))
+        {
+            return false;
+        }
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null)
+        {
+            return false;
+        }
+
+        var over = false;
+        void Check() =>
+            over = _overlayWindow is { IsVisible: true } && _overlayWindow.ContainsScreenPoint(screenX, screenY);
+
+        if (dispatcher.CheckAccess())
+        {
+            Check();
+        }
+        else
+        {
+            dispatcher.Invoke(Check);
+        }
+
+        return over;
     }
 
     public void SetOverlayStatusHint(string? message)
@@ -184,6 +215,39 @@ public class OverlayService : IOverlayService, IDisposable
 
     public OverlayLayout GetCurrentLayout() => _layout;
 
+    public void ToggleHorizontalVerticalLayout()
+    {
+        if (IsSuppressed)
+        {
+            return;
+        }
+
+        EnsureWindowCreated();
+        var current = _layout;
+        RunOnUiThread(() =>
+        {
+            if (_overlayWindow is { IsVisible: true })
+            {
+                current = _overlayWindow.CurrentLayout;
+            }
+        });
+
+        if (current == OverlayLayout.Auto)
+        {
+            current = OverlayLayout.Vertical;
+        }
+
+        var next = current == OverlayLayout.Horizontal ? OverlayLayout.Vertical : OverlayLayout.Horizontal;
+        SetLayout(next);
+        if (_currentPageSuggestions.Count > 0)
+        {
+            ShowCurrentPage();
+            PositionAtCaret();
+        }
+
+        _loggingService.Information($"Overlay layout toggled to {next}");
+    }
+
     public void SetContextMode(string? contextSummary, string? fullSentenceWords = null)
     {
         RunOnUiThread(() => _overlayWindow?.SetContextMode(contextSummary, fullSentenceWords));
@@ -213,7 +277,8 @@ public class OverlayService : IOverlayService, IDisposable
         {
             WriterOverlayCaretPlacement.Below => ScreenPosition.Below,
             WriterOverlayCaretPlacement.Above => ScreenPosition.Above,
-            _ => ScreenPosition.Auto,
+            // Auto: prefer above the text field so the overlay does not cover the caret line
+            _ => ScreenPosition.Above,
         };
 
     /// <summary>Reference point for auto layout (horizontal vs vertical) and fallbacks.</summary>

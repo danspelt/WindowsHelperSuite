@@ -42,9 +42,9 @@ public class InputService : IInputService, IDisposable
     public event EventHandler<int>? SelectionKeyPressed;
     public event EventHandler? NextPageKeyPressed;
     public event EventHandler? PreviousPageKeyPressed;
-    public event EventHandler? ManualRefreshRequested;
     /// <summary>Overlay visible: move suggestion highlight; delta -1 = Up, +1 = Down.</summary>
     public event EventHandler<int>? SuggestionHighlightMoved;
+    public event EventHandler? OverlayLayoutToggleRequested;
 
     /// <summary>
     /// Returns the slot (1–9) of the keyboard-highlighted overlay suggestion, or null. Set by the app (UI thread).
@@ -52,7 +52,7 @@ public class InputService : IInputService, IDisposable
     public Func<int?>? TryGetHighlightedSuggestionSlot { get; set; }
     public event EventHandler? TypingStarted;
     public event EventHandler? TypingStopped;
-    public event EventHandler? OverlayDismissRequested;
+    public event EventHandler<OverlayDismissEventArgs>? OverlayDismissRequested;
     public event EventHandler? InvalidTypingDetected; // New event for typing without valid text input
 
     public InputService(
@@ -314,14 +314,6 @@ public class InputService : IInputService, IDisposable
                 return;
             }
 
-            // Handle grave key (`) for manual refresh
-            if (key == 0xC0) // ` key
-            {
-                e.Handled = true;
-                ManualRefreshRequested?.Invoke(this, EventArgs.Empty);
-                return;
-            }
-
             // Left arrow: delete previous completed word before partial (Ctrl/Alt still go to host)
             if (key == 0x25 && !e.Ctrl && !e.Alt && TryDeletePreviousWordBeforePartial())
             {
@@ -331,35 +323,41 @@ public class InputService : IInputService, IDisposable
                 return;
             }
 
-            // Up/Down: move highlight in suggestion list (Ctrl/Alt still go to host)
-            if (!e.Ctrl && !e.Alt && (key == 0x26 || key == 0x28)) // Up / Down
+            // Up: toggle horizontal / vertical layout (Ctrl/Alt still go to host)
+            if (!e.Ctrl && !e.Alt && key == 0x26)
             {
                 e.Handled = true;
                 _inactivityTimer.Stop();
                 _inactivityTimer.Start();
-                SuggestionHighlightMoved?.Invoke(this, key == 0x26 ? -1 : 1);
+                OverlayLayoutToggleRequested?.Invoke(this, EventArgs.Empty);
                 return;
             }
 
-            // Esc or Tab closes overlay and stops typing session
-            if (key == 0x1B || key == 0x09) // Escape or Tab
+            // Down: move highlight in suggestion list
+            if (!e.Ctrl && !e.Alt && key == 0x28)
+            {
+                e.Handled = true;
+                _inactivityTimer.Stop();
+                _inactivityTimer.Start();
+                SuggestionHighlightMoved?.Invoke(this, 1);
+                return;
+            }
+
+            // Esc hides overlay and puts writer to sleep (wake with ` hotkey)
+            if (key == 0x1B) // Escape
             {
                 lock (_bufferLock)
                 {
                     _currentWord.Clear();
-                    _currentSentence.Clear();
                 }
 
-                _typingInProgress = false;
-                _hasValidTextInput = false;
+                IsOverlayVisible = false;
                 _inactivityTimer.Stop();
-                OverlayDismissRequested?.Invoke(this, EventArgs.Empty);
-                TypingStopped?.Invoke(this, EventArgs.Empty);
-                if (key == 0x1B)
+                OverlayDismissRequested?.Invoke(this, new OverlayDismissEventArgs
                 {
-                    e.Handled = true; // Only suppress Escape, let Tab through
-                }
-
+                    Reason = OverlayDismissReason.Soft
+                });
+                e.Handled = true;
                 return;
             }
         }
@@ -673,9 +671,12 @@ public class InputService : IInputService, IDisposable
             }
 
             _typingInProgress = false;
-            _hasValidTextInput = false;
+            IsOverlayVisible = false;
             _inactivityTimer.Stop();
-            OverlayDismissRequested?.Invoke(this, EventArgs.Empty);
+            OverlayDismissRequested?.Invoke(this, new OverlayDismissEventArgs
+            {
+                Reason = OverlayDismissReason.SessionEnded
+            });
             TypingStopped?.Invoke(this, EventArgs.Empty);
         }
     }
@@ -728,9 +729,12 @@ public class InputService : IInputService, IDisposable
         }
 
         _typingInProgress = false;
-        _hasValidTextInput = false;
+        IsOverlayVisible = false;
         _inactivityTimer.Stop();
-        OverlayDismissRequested?.Invoke(this, EventArgs.Empty);
+        OverlayDismissRequested?.Invoke(this, new OverlayDismissEventArgs
+        {
+            Reason = OverlayDismissReason.SessionEnded
+        });
         _loggingService.Debug($"Writer session ended — non-writer text field ({reason})");
     }
 

@@ -596,7 +596,7 @@
                                     <TextBlock Text="Lower = more see-through panel (host app behind overlay); text stays sharp" FontSize="11" Foreground="#55558A" TextWrapping="Wrap" Margin="0,2,0,0"/>
                                 </StackPanel>
                                 <Slider x:Name="OpacitySlider" Grid.Column="1"
-                                        Minimum="10" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True"
+                                        Minimum="8" Maximum="100" TickFrequency="5" IsSnapToTickEnabled="True"
                                         Margin="12,0,8,0" VerticalAlignment="Center"
                                         ValueChanged="OpacitySlider_ValueChanged"/>
                                 <Border Grid.Column="2" Background="#12122A" CornerRadius="6" Padding="6,4">
@@ -976,6 +976,20 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Follow caret" Foreground="#D8D8F0" VerticalAlignment="Center"/>
                                 <CheckBox x:Name="WriterFollowCaret" Grid.Column="1" VerticalAlignment="Center" Foreground="#88BBFF"/>
+                            </Grid>
+                        </Border>
+                        <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Foreground="#D8D8F0" VerticalAlignment="Center" TextWrapping="Wrap">
+                                    <Run Text="Start awake"/>
+                                    <LineBreak/>
+                                    <Run Text="Writer is active when the app launches (no Wake hotkey needed)." FontSize="10" Foreground="#6A6A92"/>
+                                </TextBlock>
+                                <CheckBox x:Name="WriterStartAwake" Grid.Column="1" VerticalAlignment="Center" Foreground="#88BBFF"/>
                             </Grid>
                         </Border>
                         <Border Background="#1C1C30" CornerRadius="8" Padding="16,12" Margin="0,0,0,6">

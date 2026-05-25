@@ -17,19 +17,29 @@ public static class WriterPredictionBootstrap
         JsonTypingModelStore stores,
         LocalLlmOptions llmOptions,
         HttpClient httpClient,
-        WriterPredictionOptions? rankOptions = null)
+        WriterPredictionOptions? rankOptions = null,
+        INextWordLookup? nextWordLookup = null)
     {
         var frequencies = WordFrequencyLoader.LoadDefault();
         var llmClient = new LocalLlmClient(httpClient, llmOptions);
 
-        IReadOnlyList<IPredictionProvider> providers =
-        [
+        var providers = new List<IPredictionProvider>
+        {
             new PhraseMemoryProvider(typingModel, stores.Phrases),
+        };
+
+        if (nextWordLookup is not null)
+        {
+            providers.Add(new NextWordProvider(nextWordLookup));
+        }
+
+        providers.AddRange(
+        [
             new PrefixWordProvider(frequencies),
-            new RecencyProvider(stores.Words),
+            new RecencyProvider(stores.Words, typingModel),
             new CorrectionProvider(typingModel),
             new LocalLlmProvider(llmClient, llmOptions)
-        ];
+        ]);
 
         var ranker = new CandidateRanker(rankOptions);
         return new PredictionService(providers, ranker);

@@ -7,5 +7,4 @@ public interface IInputService
     event EventHandler<int>? SelectionKeyPressed;
     event EventHandler? NextPageKeyPressed;
     event EventHandler? PreviousPageKeyPressed;
-    event EventHandler? ManualRefreshRequested;
 }

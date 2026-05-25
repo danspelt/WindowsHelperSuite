@@ -101,6 +101,12 @@ public sealed class AiSuggestionService : IAiSuggestionService, IDisposable
 
         var user = new StringBuilder();
         user.AppendLine($"Return up to {max} distinct continuations (one per line).");
+        if (!string.IsNullOrWhiteSpace(request.PreviousCompletedWord)
+            && string.IsNullOrWhiteSpace(request.CurrentWord))
+        {
+            user.AppendLine($"The user just finished the word \"{request.PreviousCompletedWord.Trim()}\" and needs the NEXT word or short phrase.");
+        }
+
         if (!string.IsNullOrWhiteSpace(request.CurrentWord))
         {
             user.AppendLine($"Partial word being typed (may be empty): \"{request.CurrentWord.Trim()}\"");

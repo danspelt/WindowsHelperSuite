@@ -80,9 +80,12 @@ public sealed class LocalLlmProvider : IPredictionProvider
         };
 
         var prev = request.PreviousCompletedWord?.Trim() ?? "";
+        var token = request.CurrentToken?.Trim() ?? "";
         var prevLine = string.IsNullOrWhiteSpace(prev)
             ? ""
-            : $"Word before the fragment being typed: \"{prev}\"\n";
+            : string.IsNullOrWhiteSpace(token)
+                ? $"The user just finished the word \"{prev}\" and may want the NEXT word or short phrase.\n"
+                : $"Word before the fragment being typed: \"{prev}\"\n";
 
         return $"""
             Complete the user's text with up to 4 short writing suggestions.

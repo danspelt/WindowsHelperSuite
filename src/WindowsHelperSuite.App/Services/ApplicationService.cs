@@ -58,6 +58,9 @@ public class ApplicationService : IDisposable
     /// <summary>Cap for phrase/word-bank context list only; prediction uses the full sentence from InputService.</summary>
     private const int MaxPhraseContextWords = 4096;
     private int _focusLostCount = 0; // Require multiple failed checks before hiding
+    private int _mouseDismissAnchorX = int.MinValue;
+    private int _mouseDismissAnchorY = int.MinValue;
+    private const int MouseDismissMoveThresholdSq = 16; // 4px movement
     private SpeakMode _speakMode = SpeakMode.Both;
     private readonly object _writerStateLock = new();
     // Writer starts asleep — must be woken with the user-configured WakeWriter hotkey.
@@ -156,6 +159,12 @@ public class ApplicationService : IDisposable
         WireInputToOverlay();
         RegisterHotkeyActions();
         RegisterDefaultHotkeys();
+
+        if (_settingsService.Settings.Writer.StartAwake)
+        {
+            _writerAwake = true;
+            _loggingService.Information("Writer starting awake (StartAwake enabled)");
+        }
 
         // Install the writer hook first, then hotkeys, so the hotkey LL hook runs before Input (last-installed = first in chain).
         _inputService.Start();
@@ -279,6 +288,7 @@ public class ApplicationService : IDisposable
         _inputService.TypingStarted += (_, _) =>
         {
             if (!_writerAwake) return;
+            _hasValidTextInput = true;
             DeferWriterUi(ShowOverlay);
         };
 
@@ -324,7 +334,7 @@ public class ApplicationService : IDisposable
             if (!_writerAwake) return;
             DeferWriterUi(() => OnSentenceTyped(sentence));
         };
-        _inputService.OverlayDismissRequested += (_, _) => DeferWriterUi(() =>
+        _inputService.OverlayDismissRequested += (_, e) => DeferWriterUi(() =>
         {
             _speechService.Stop();
             HideOverlay();
@@ -334,12 +344,17 @@ public class ApplicationService : IDisposable
                 _currentSuggestions = [];
             }
 
+            if (e.Reason == OverlayDismissReason.Soft)
+            {
+                _hasValidTextInput = false;
+                _writerAwake = false;
+                _loggingService.Information("Writer hidden via Esc — press ` to wake");
+                NotifyWriterSleepTray();
+                return;
+            }
+
             _hasValidTextInput = false;
-            _previousWord = string.Empty;
-            _recentWords.Clear();
-            // Return writer to sleep — must be woken again with the wake-up hotkey.
-            _writerAwake = false;
-            _loggingService.Debug("Overlay hidden - explicit dismissal requested (writer sleeping)");
+            _loggingService.Debug($"Overlay hidden — session ended ({e.Reason}); writer stays awake");
         });
 
         _inputService.TypingStopped += (_, _) => DeferWriterUi(() =>
@@ -453,6 +468,15 @@ public class ApplicationService : IDisposable
         _inputService.PreviousPageKeyPressed += (_, _) => DeferWriterUi(() => _overlayService.MoveToPreviousPage());
         _inputService.SuggestionHighlightMoved += (_, delta) =>
             DeferWriterUi(() => _overlayService.MoveSuggestionHighlight(delta));
+        _inputService.OverlayLayoutToggleRequested += (_, _) => DeferWriterUi(() =>
+        {
+            if (!_writerAwake || !_inputService.IsOverlayVisible)
+            {
+                return;
+            }
+
+            _overlayService.ToggleHorizontalVerticalLayout();
+        });
     }
 
     private string _currentWord = string.Empty;
@@ -460,6 +484,8 @@ public class ApplicationService : IDisposable
     private HashSet<string> _usedSuggestionsInCurrentSession = [];
     private bool _hasValidTextInput = false;
     private long _lastSelectionTick;
+    private int _lastOverlayCaretX = int.MinValue;
+    private int _lastOverlayCaretY = int.MinValue;
     private int _overlayAiGeneration;
     private CancellationTokenSource? _overlayAiDebounceCts;
     private readonly HttpClient _localOverlayHttp = new();
@@ -473,6 +499,7 @@ public class ApplicationService : IDisposable
 
         _hasValidTextInput = true;
         _inputService.IsOverlayVisible = true;
+        CaptureMouseDismissAnchor();
         UpdateSuggestions(_inputService.GetCurrentWord());
         _focusCheckTimer.Start();
         _loggingService.Debug("Overlay shown - typing started");
@@ -483,6 +510,90 @@ public class ApplicationService : IDisposable
         _focusCheckTimer.Stop();
         _overlayService.HideSuggestions();
         _inputService.IsOverlayVisible = false;
+        ResetMouseDismissTracking();
+    }
+
+    private void HideOverlayFromMouseMove()
+    {
+        if (!_inputService.IsOverlayVisible)
+        {
+            return;
+        }
+
+        _overlayService.HideSuggestions();
+        _inputService.IsOverlayVisible = false;
+        ResetMouseDismissTracking();
+    }
+
+    /// <summary>Show overlay after wake when there is no caret yet (desktop / non-text focus).</summary>
+    private void ShowWriterAwaitingTextField()
+    {
+        _inputService.IsOverlayVisible = true;
+        CaptureMouseDismissAnchor();
+        _focusCheckTimer.Start();
+
+        List<SuggestionItem> suggestions;
+        lock (_writerStateLock)
+        {
+            _currentWord = string.Empty;
+            suggestions = _predictionService.GetSuggestions(string.Empty, string.Empty, _writerContext.GetSnapshot()).ToList();
+            _currentSuggestions = suggestions;
+        }
+
+        _overlayService.ShowSuggestions(suggestions);
+        _overlayService.SetOverlayStatusHint("Focus a text field and type — suggestions will follow the caret");
+        _overlayService.RepositionAtCaret();
+        _loggingService.Debug("Writer awake — awaiting text field focus");
+    }
+
+    private void CaptureMouseDismissAnchor()
+    {
+        if (Win32Cursor.TryGetPosition(out var x, out var y))
+        {
+            _mouseDismissAnchorX = x;
+            _mouseDismissAnchorY = y;
+        }
+    }
+
+    private void ResetMouseDismissTracking()
+    {
+        _mouseDismissAnchorX = int.MinValue;
+        _mouseDismissAnchorY = int.MinValue;
+    }
+
+    private void TryDismissOverlayOnMouseMove()
+    {
+        if (!_writerAwake || !_inputService.IsOverlayVisible)
+        {
+            return;
+        }
+
+        if (!Win32Cursor.TryGetPosition(out var x, out var y))
+        {
+            return;
+        }
+
+        if (_mouseDismissAnchorX == int.MinValue)
+        {
+            CaptureMouseDismissAnchor();
+            return;
+        }
+
+        if (_overlayService.IsCursorOverOverlay())
+        {
+            CaptureMouseDismissAnchor();
+            return;
+        }
+
+        var dx = x - _mouseDismissAnchorX;
+        var dy = y - _mouseDismissAnchorY;
+        if (dx * dx + dy * dy < MouseDismissMoveThresholdSq)
+        {
+            return;
+        }
+
+        HideOverlayFromMouseMove();
+        _loggingService.Debug("Overlay hidden — mouse moved");
     }
 
     private void OnSecretFieldProtectionChanged(object? sender, bool isProtected)
@@ -521,6 +632,11 @@ public class ApplicationService : IDisposable
     {
         try
         {
+            if (_writerAwake && _inputService.IsOverlayVisible)
+            {
+                System.Windows.Application.Current?.Dispatcher.Invoke(TryDismissOverlayOnMouseMove);
+            }
+
             var hasCaret = Win32Caret.GetCaretPosition(out var caretX, out var caretY);
             var isValidCaret = hasCaret && (caretX != 0 || caretY != 0);
             if (!isValidCaret)
@@ -532,7 +648,6 @@ public class ApplicationService : IDisposable
                 {
                     _loggingService.Debug("Focus check: no text field focused for 1.5s - hiding overlay");
                     System.Windows.Application.Current?.Dispatcher.Invoke(() => HideOverlay());
-                    _hasValidTextInput = false;
                     lock (_writerStateLock)
                     {
                         _currentWord = string.Empty;
@@ -545,6 +660,16 @@ public class ApplicationService : IDisposable
             else
             {
                 _focusLostCount = 0;
+                if (_writerAwake
+                    && _settingsService.Settings.Writer.FollowCaret
+                    && _inputService.IsOverlayVisible
+                    && Win32Caret.GetCaretPosition(out var cx, out var cy)
+                    && (cx != _lastOverlayCaretX || cy != _lastOverlayCaretY))
+                {
+                    _lastOverlayCaretX = cx;
+                    _lastOverlayCaretY = cy;
+                    DeferWriterUi(() => _overlayService.RepositionAtCaret());
+                }
             }
         }
         catch (Exception ex)
@@ -570,11 +695,6 @@ public class ApplicationService : IDisposable
         _overlayService.SetOverlayStatusHint(null);
 
         var context = _inputService.GetSuggestionContextPrefix();
-        var lastContextWord = context.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
-        // Prefer live text from the focused control so the banner matches the real field (hook buffer can drift).
-        var fullSentence = Win32Caret.TryGetTextForOverlayContext(out var liveFieldText)
-            ? liveFieldText
-            : _inputService.GetFullSentenceForOverlay();
 
         List<SuggestionItem> suggestions;
         lock (_writerStateLock)
@@ -584,27 +704,27 @@ public class ApplicationService : IDisposable
             _currentSuggestions = suggestions;
         }
 
-        string modeSummary;
-        if (!string.IsNullOrWhiteSpace(text))
+        if (!_inputService.IsOverlayVisible)
         {
-            modeSummary = !string.IsNullOrWhiteSpace(lastContextWord)
-                ? $"Completing \"{text}\" after \"{lastContextWord}\""
-                : $"Completing \"{text}\"";
+            CaptureMouseDismissAnchor();
         }
-        else if (!string.IsNullOrWhiteSpace(lastContextWord))
-        {
-            modeSummary = $"Next idea after \"{lastContextWord}\"";
-        }
-        else
-        {
-            modeSummary = "Sentence starter";
-        }
-
-        _overlayService.SetContextMode(
-            modeSummary,
-            string.IsNullOrWhiteSpace(fullSentence) ? null : fullSentence);
 
         _overlayService.ShowSuggestions(suggestions);
+        _inputService.IsOverlayVisible = true;
+        if (!_focusCheckTimer.Enabled)
+        {
+            _focusCheckTimer.Start();
+        }
+
+        if (_settingsService.Settings.Writer.FollowCaret)
+        {
+            _overlayService.RepositionAtCaret();
+            if (Win32Caret.GetCaretPosition(out var cx, out var cy))
+            {
+                _lastOverlayCaretX = cx;
+                _lastOverlayCaretY = cy;
+            }
+        }
 
         // Dreamlike: preview the most likely suggestion before user accepts it
         PreviewTopSuggestion(suggestions);
@@ -688,10 +808,12 @@ public class ApplicationService : IDisposable
             var requestFingerprint = context + "\u001f" + word + "\u001f" + lineForAi;
 
             var maxAi = Math.Clamp(aiWriter.OverlayAiMaxSuggestions, 1, 9);
+            var prevWord = context.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "";
             var request = new AiSuggestionRequest
             {
                 CurrentText = lineForAi,
                 CurrentWord = word,
+                PreviousCompletedWord = string.IsNullOrWhiteSpace(word) ? prevWord : null,
                 MaxSuggestions = maxAi
             };
 
@@ -733,7 +855,8 @@ public class ApplicationService : IDisposable
                     freshLocal = _predictionService.GetSuggestions(ctxNow, wNow, _writerContext.GetSnapshot()).ToList();
                 }
 
-                var merged = MergeAiOverlaySuggestions(freshLocal, aiResults, maxAi);
+                var postSpace = string.IsNullOrWhiteSpace(wNow);
+                var merged = MergeAiOverlaySuggestions(freshLocal, aiResults, maxAi, postSpace);
                 lock (_writerStateLock)
                 {
                     _currentSuggestions = merged;
@@ -741,6 +864,10 @@ public class ApplicationService : IDisposable
 
                 _overlayService.SetOverlayStatusHint(null);
                 _overlayService.ShowSuggestions(merged);
+                if (_settingsService.Settings.Writer.FollowCaret)
+                {
+                    _overlayService.RepositionAtCaret();
+                }
             });
         }
         catch (OperationCanceledException)
@@ -862,7 +989,8 @@ public class ApplicationService : IDisposable
                     freshLocal = _predictionService.GetSuggestions(ctxNow, wNow, _writerContext.GetSnapshot()).ToList();
                 }
 
-                var merged = MergeAiOverlaySuggestions(freshLocal, aiResults, maxAi);
+                var postSpace = string.IsNullOrWhiteSpace(wNow);
+                var merged = MergeAiOverlaySuggestions(freshLocal, aiResults, maxAi, postSpace);
                 lock (_writerStateLock)
                 {
                     _currentSuggestions = merged;
@@ -870,6 +998,10 @@ public class ApplicationService : IDisposable
 
                 _overlayService.SetOverlayStatusHint(null);
                 _overlayService.ShowSuggestions(merged);
+                if (_settingsService.Settings.Writer.FollowCaret)
+                {
+                    _overlayService.RepositionAtCaret();
+                }
             });
         }
         catch (OperationCanceledException)
@@ -885,53 +1017,78 @@ public class ApplicationService : IDisposable
     private static List<SuggestionItem> MergeAiOverlaySuggestions(
         IReadOnlyList<SuggestionItem> local,
         IReadOnlyList<AiSuggestionResult> aiResults,
-        int maxAiSlots)
+        int maxAiSlots,
+        bool postSpace = false)
     {
+        const int postSpaceLocalQuota = 4;
+        var maxSlots = 9;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var s in local)
-        {
-            seen.Add(s.DisplayText.Trim());
-        }
-
         var merged = new List<SuggestionItem>();
-        var aiAdded = 0;
-        foreach (var r in aiResults)
+
+        static bool IsNextWordSlot(SuggestionItem s) =>
+            s.Kind == SuggestionKind.NextWord
+            || (!s.DisplayText.Contains(' ', StringComparison.Ordinal)
+                && s.Kind is SuggestionKind.WordCompletion or SuggestionKind.UserHistory or SuggestionKind.NextWord);
+
+        void AddLocal(IEnumerable<SuggestionItem> items)
         {
-            if (aiAdded >= maxAiSlots || merged.Count >= 9)
+            foreach (var s in items)
             {
-                break;
-            }
+                if (merged.Count >= maxSlots)
+                {
+                    return;
+                }
 
-            var t = SanitizeOverlaySuggestionText(r.Text);
-            if (t.Length == 0 || t.Length > 120)
-            {
-                continue;
-            }
+                var d = s.DisplayText.Trim();
+                if (d.Length == 0 || seen.Contains(d))
+                {
+                    continue;
+                }
 
-            if (seen.Contains(t))
-            {
-                continue;
+                seen.Add(d);
+                merged.Add(s);
             }
-
-            seen.Add(t);
-            merged.Add(new SuggestionItem
-            {
-                DisplayText = t,
-                InsertText = string.Empty,
-                Kind = SuggestionKind.AiSuggestion,
-                Score = 5200 - aiAdded * 14
-            });
-            aiAdded++;
         }
 
-        foreach (var s in local)
+        void AddAi()
         {
-            if (merged.Count >= 9)
+            var aiAdded = 0;
+            foreach (var r in aiResults)
             {
-                break;
-            }
+                if (aiAdded >= maxAiSlots || merged.Count >= maxSlots)
+                {
+                    break;
+                }
 
-            merged.Add(s);
+                var t = SanitizeOverlaySuggestionText(r.Text);
+                if (t.Length == 0 || t.Length > 120 || seen.Contains(t))
+                {
+                    continue;
+                }
+
+                seen.Add(t);
+                merged.Add(new SuggestionItem
+                {
+                    DisplayText = t,
+                    InsertText = string.Empty,
+                    Kind = SuggestionKind.AiSuggestion,
+                    Score = 5200 - aiAdded * 14
+                });
+                aiAdded++;
+            }
+        }
+
+        if (postSpace)
+        {
+            AddLocal(local.Where(IsNextWordSlot).OrderByDescending(s => s.Score).Take(postSpaceLocalQuota));
+            AddAi();
+            AddLocal(local.Where(s => !IsNextWordSlot(s)).OrderByDescending(s => s.Score));
+            AddLocal(local.Where(IsNextWordSlot).OrderByDescending(s => s.Score).Skip(postSpaceLocalQuota));
+        }
+        else
+        {
+            AddAi();
+            AddLocal(local);
         }
 
         for (var i = 0; i < merged.Count; i++)
@@ -1017,6 +1174,7 @@ public class ApplicationService : IDisposable
             _recentWords.Clear();
             _writerAwake = false;
             _loggingService.Information("Writer put to sleep via close button — only WakeWriter hotkey will wake it");
+            NotifyWriterSleepTray();
         });
     }
 
@@ -1182,21 +1340,29 @@ public class ApplicationService : IDisposable
         {
             DeferWriterUi(() =>
             {
-                // Clear any close-button suppression so the overlay can be shown again.
-                _overlayService.ClearSuppression();
-
-                if (_writerAwake)
+                if (_inputService.IsInProtectedField)
                 {
-                    _loggingService.Debug("WakeWriter pressed but writer already awake — ignored");
+                    _loggingService.Debug("WakeWriter ignored — protected field focused");
                     return;
                 }
 
+                _overlayService.ClearSuppression();
+
+                var wasAsleep = !_writerAwake;
                 _writerAwake = true;
-                _loggingService.Information("Writer woken via hotkey — overlay active");
-                // Only show the overlay if the user is currently in a text field.
-                if (Win32Caret.GetCaretPosition(out var x, out var y) && (x != 0 || y != 0))
+                if (wasAsleep)
+                {
+                    _loggingService.Information($"Writer woken via {GetWakeWriterHotkeyDisplay()} hotkey");
+                    NotifyWriterWakeTray();
+                }
+
+                if (IsWriterCaretAvailable())
                 {
                     ShowOverlay();
+                }
+                else
+                {
+                    ShowWriterAwaitingTextField();
                 }
             });
         });
@@ -1219,6 +1385,7 @@ public class ApplicationService : IDisposable
                 _recentWords.Clear();
                 _writerAwake = false;
                 _loggingService.Information("Writer killed via Ctrl+Q hotkey — all state cleared");
+                NotifyWriterSleepTray();
             });
         });
 
@@ -1339,7 +1506,7 @@ public class ApplicationService : IDisposable
             _hotkeyService.RegisterHotkey("WriterRefresh", "Ctrl+Shift+R");
             _hotkeyService.RegisterHotkey("ToggleOverlay", "Ctrl+Shift+O");
             _hotkeyService.RegisterHotkey("PauseWriter", "Ctrl+Shift+P");
-            _hotkeyService.RegisterHotkey("WakeWriter", "`");
+            _hotkeyService.RegisterHotkey("WakeWriter", "`", true);
             _hotkeyService.RegisterHotkey("KillWriter", "Ctrl+Q");
             _hotkeyService.RegisterHotkey("CleanupWordBank", "Ctrl+Shift+X");
             _hotkeyService.RegisterHotkey("ResetAllWordBank", "Ctrl+Shift+Delete");
@@ -1361,7 +1528,9 @@ public class ApplicationService : IDisposable
             {
                 var consume =
                     string.Equals(binding.ActionName, "OpenModeMenu", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(binding.ActionName, "OpenStillSpace", StringComparison.OrdinalIgnoreCase);
+                    || string.Equals(binding.ActionName, "OpenStillSpace", StringComparison.OrdinalIgnoreCase)
+                    || (string.Equals(binding.ActionName, "WakeWriter", StringComparison.OrdinalIgnoreCase)
+                        && IsBareBacktickGesture(binding.Gesture));
                 _hotkeyService.RegisterHotkey(binding.ActionName, binding.Gesture, consume);
             }
 
@@ -1388,7 +1557,7 @@ public class ApplicationService : IDisposable
                 string.Equals(b.ActionName, "WakeWriter", StringComparison.OrdinalIgnoreCase));
             if (wakeDef == null || string.IsNullOrWhiteSpace(wakeDef.Gesture) || !wakeDef.Enabled)
             {
-                _hotkeyService.RegisterHotkey("WakeWriter", "`");
+                _hotkeyService.RegisterHotkey("WakeWriter", "`", true);
                 _loggingService.Information("WakeWriter bound to default ` (no user binding found)");
             }
         }
@@ -2114,6 +2283,49 @@ public class ApplicationService : IDisposable
             TimeoutSeconds = ai.ChatTimeoutSeconds,
             DefaultSystemPrompt = ai.ChatSystemPrompt,
         };
+    }
+
+    private static bool IsBareBacktickGesture(string gesture)
+    {
+        var trimmed = gesture.Trim();
+        return trimmed.Equals("`", StringComparison.OrdinalIgnoreCase)
+               || trimmed.Equals("GRAVE", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsWriterCaretAvailable()
+    {
+        if (Win32Caret.GetCaretPosition(out var x, out var y) && (x != 0 || y != 0))
+        {
+            return true;
+        }
+
+        if (Win32Caret.TryGetTextInputBounds(out var bounds) && !bounds.IsEmpty)
+        {
+            return true;
+        }
+
+        return Win32Caret.TryGetCaretScreenRect(out var caretRc) && !caretRc.IsEmpty;
+    }
+
+    private string GetWakeWriterHotkeyDisplay()
+    {
+        var binding = _settingsService.Settings.Hotkeys.Bindings
+            .FirstOrDefault(b => string.Equals(b.ActionName, "WakeWriter", StringComparison.OrdinalIgnoreCase));
+        return string.IsNullOrWhiteSpace(binding?.Gesture) ? "`" : binding!.Gesture;
+    }
+
+    private void NotifyWriterWakeTray()
+    {
+        _trayIconService.ShowNotification(
+            "Writer awake",
+            $"Type in any text field for suggestions. Press Esc or move the mouse away to hide. Sleep again with the overlay ✕.");
+    }
+
+    private void NotifyWriterSleepTray()
+    {
+        _trayIconService.ShowNotification(
+            "Writer sleeping",
+            $"Press {GetWakeWriterHotkeyDisplay()} to wake Writer and show suggestions again.");
     }
 
     public void Dispose()

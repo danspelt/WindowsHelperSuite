@@ -70,6 +70,23 @@ public class TrayIconService : IDisposable
         _notifyIcon.Text = text.Length > 63 ? text[..63] : text;
     }
 
+    /// <summary>Shows a short tray balloon (max 255 chars on older Windows).</summary>
+    public void ShowNotification(string title, string message, ToolTipIcon icon = ToolTipIcon.Info)
+    {
+        var body = message.Length > 240 ? message[..240] + "…" : message;
+        try
+        {
+            _notifyIcon.BalloonTipTitle = title.Length > 63 ? title[..63] : title;
+            _notifyIcon.BalloonTipText = body;
+            _notifyIcon.BalloonTipIcon = icon;
+            _notifyIcon.ShowBalloonTip(4000);
+        }
+        catch (Exception ex)
+        {
+            _loggingService.Debug($"Tray notification skipped: {ex.Message}");
+        }
+    }
+
     public void ShowSettings() => ShowSettings(null);
 
     public void ShowSettings(int? initialTabIndex)

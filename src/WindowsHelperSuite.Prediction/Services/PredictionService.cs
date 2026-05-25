@@ -60,6 +60,51 @@ public class PredictionService : IPredictionService, IDisposable
         EnsureSeedData();
     }
 
+    /// <summary>Likely next single words after <paramref name="lastWord"/> (static map + learned bigrams/trigrams).</summary>
+    public IReadOnlyList<NextWordCandidate> GetNextWordsAfter(string lastWord, string? wordBeforeLast = null)
+    {
+        if (string.IsNullOrWhiteSpace(lastWord))
+        {
+            return [];
+        }
+
+        lock (_syncRoot)
+        {
+            var lw = lastWord.Trim();
+            var wb = wordBeforeLast?.Trim() ?? string.Empty;
+            var next = GetContextNextWords(lw, wb);
+            var results = new List<NextWordCandidate>();
+
+            foreach (var word in next)
+            {
+                if (string.IsNullOrWhiteSpace(word) || word.Contains(' ', StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var rank = GetBigramRank(lw, word);
+                var trigramBoost = 0.0;
+                if (!string.IsNullOrWhiteSpace(wb))
+                {
+                    var tr = GetTrigramRank(wb, lw, word);
+                    if (tr < 50)
+                    {
+                        trigramBoost = (50 - tr) * 0.08;
+                    }
+                }
+
+                var freq = _wordIndex.TryGetValue(word, out var entry) ? entry.Frequency : 0;
+                var score = 6.0 - rank * 0.12 + trigramBoost + Math.Log(1 + Math.Max(1, freq));
+                results.Add(new NextWordCandidate(word, score));
+            }
+
+            return results
+                .OrderByDescending(x => x.Score)
+                .Take(20)
+                .ToList();
+        }
+    }
+
     public IReadOnlyList<SuggestionItem> GetSuggestions(string context, string currentWord, WriterContextSnapshot writerContext = default)
     {
         var normalizedWord = NormalizeWord(currentWord);
