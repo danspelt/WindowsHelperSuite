@@ -12,6 +12,8 @@ public interface IOverlayService
 
     /// <summary>Moves the overlay near the current caret without refreshing suggestion content.</summary>
     void RepositionAtCaret();
+    /// <summary>Shows the window immediately (for when Writer is woken but no suggestions yet).</summary>
+    void ShowWindow();
     /// <param name="contextSummary">Short hint (e.g. completing "x" after "y").</param>
     /// <param name="fullSentenceWords">All words in the current sentence from the writer buffer (optional).</param>
     void SetContextMode(string? contextSummary, string? fullSentenceWords = null);

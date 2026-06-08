@@ -27,7 +27,7 @@ public sealed class LocalLlmClient
                 new { role = "user", content = prompt }
             },
             temperature = 0.3,
-            max_tokens = 40
+            max_tokens = 80
         };
 
         var url = BuildChatCompletionsUrl(_options.BaseUrl);

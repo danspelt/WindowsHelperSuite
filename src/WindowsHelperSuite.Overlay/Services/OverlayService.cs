@@ -20,8 +20,6 @@ public class OverlayService : IOverlayService, IDisposable
     private OverlayLayout _layout = OverlayLayout.Vertical;
     private int _lastLogPageSuggestionCount = int.MinValue;
     private int _lastLogSuggestionPageIndex = int.MinValue;
-    private int _lastLogCaretX = int.MinValue;
-    private int _lastLogCaretY = int.MinValue;
 
     public event EventHandler<int>? SuggestionSelected;
     public event EventHandler<string?>? SuggestionHighlightChanged;
@@ -78,7 +76,18 @@ public class OverlayService : IOverlayService, IDisposable
         PositionAtCaret();
     }
 
-    public void RepositionAtCaret() => PositionAtCaret();
+    public void RepositionAtCaret()
+    {
+        // As a regular window, we don't follow the caret. Just ensure window is visible.
+        EnsureWindowCreated();
+        RunOnUiThread(() => _overlayWindow?.PositionNearPoint(0, 0, ScreenPosition.Below, null));
+    }
+
+    public void ShowWindow()
+    {
+        EnsureWindowCreated();
+        RunOnUiThread(() => _overlayWindow?.ShowWindow());
+    }
 
     public void HideSuggestions()
     {
@@ -298,61 +307,36 @@ public class OverlayService : IOverlayService, IDisposable
     {
         EnsureWindowCreated();
 
-        var pos = MapCaretPlacement();
         RunOnUiThread(() => _overlayWindow?.SetLayout(_layout));
 
-        Rect? uiaBounds = null;
-        if (Win32Caret.TryGetTextInputBounds(out var bounds) && !bounds.IsEmpty)
-        {
-            uiaBounds = bounds;
-        }
+        TryGetLayoutReferencePoint(out var caretX, out var caretY);
 
-        if (Win32Caret.GetCaretPosition(out var x, out var y))
+        RunOnUiThread(() =>
         {
-            var exclusion = BuildTextExclusionRect(x, y, uiaBounds);
-            
-            // Check if we should position on next screen
-            var screenPreference = _settingsService.Settings.Ui.OverlayScreenPreference;
-            if (screenPreference == WriterOverlayScreenPreference.NextScreen)
+            if (_overlayWindow == null) return;
+
+            // Pin to bottom-center of the monitor the caret is on
+            double screenLeft, screenTop, screenRight, screenBottom;
+            if (Win32Screen.TryGetWorkAreaForPoint(caretX, caretY,
+                out var wl, out var wt, out var wr, out var wb))
             {
-                // Position on next screen instead of current
-                var nextScreenCenter = GetNextScreenCenter(x, y);
-                if (nextScreenCenter.HasValue)
-                {
-                    var nextExclusion = BuildTextExclusionRect(nextScreenCenter.Value.X, nextScreenCenter.Value.Y, uiaBounds);
-                    RunOnUiThread(() => _overlayWindow?.PositionNearPoint(nextScreenCenter.Value.X, nextScreenCenter.Value.Y, pos, nextExclusion));
-                    if (nextScreenCenter.Value.X != _lastLogCaretX || nextScreenCenter.Value.Y != _lastLogCaretY)
-                    {
-                        _lastLogCaretX = nextScreenCenter.Value.X;
-                        _lastLogCaretY = nextScreenCenter.Value.Y;
-                        _loggingService.Debug($"Overlay positioned on next screen: {nextScreenCenter.Value.X}, {nextScreenCenter.Value.Y}");
-                    }
-                    return;
-                }
+                screenLeft = wl; screenTop = wt; screenRight = wr; screenBottom = wb;
             }
-            
-            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(x, y, pos, exclusion));
-            if (x != _lastLogCaretX || y != _lastLogCaretY)
+            else
             {
-                _lastLogCaretX = x;
-                _lastLogCaretY = y;
-                _loggingService.Debug($"Overlay positioned at caret: {x}, {y}");
+                var area = System.Windows.SystemParameters.WorkArea;
+                screenLeft = area.Left; screenTop = area.Top;
+                screenRight = area.Right; screenBottom = area.Bottom;
             }
-        }
-        else
-        {
-            var screen = System.Windows.SystemParameters.WorkArea;
-            var centerX = (int)(screen.Left + screen.Width / 2);
-            var centerY = (int)(screen.Top + screen.Height / 2);
-            var exclusion = BuildTextExclusionRect(centerX, centerY, uiaBounds);
-            RunOnUiThread(() => _overlayWindow?.PositionNearPoint(centerX, centerY, pos, exclusion));
-            if (centerX != _lastLogCaretX || centerY != _lastLogCaretY)
-            {
-                _lastLogCaretX = centerX;
-                _lastLogCaretY = centerY;
-                _loggingService.Debug($"Overlay positioned at screen center (caret unavailable): {centerX}, {centerY}");
-            }
-        }
+
+            const int bottomMargin = 24;
+            _overlayWindow.UpdateLayout();
+            var winW = _overlayWindow.ActualWidth > 0 ? _overlayWindow.ActualWidth : 500;
+            var winH = _overlayWindow.ActualHeight > 0 ? _overlayWindow.ActualHeight : 100;
+
+            _overlayWindow.Left = screenLeft + (screenRight - screenLeft - winW) / 2;
+            _overlayWindow.Top  = screenBottom - winH - bottomMargin;
+        });
     }
 
     private (int X, int Y)? GetNextScreenCenter(int currentX, int currentY)

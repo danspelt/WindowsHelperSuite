@@ -37,8 +37,10 @@ public partial class OverlayWindow : Window
     public event EventHandler? PreviousPageRequested;
     /// <summary>Display text of the suggestion now keyboard-highlighted.</summary>
     public event EventHandler<string?>? SuggestionHighlightChanged;
-    /// <summary>Raised when the user clicks the close button to dismiss the overlay.</summary>
+    /// <summary>Raised when the overlay requests dismissal. Kept for OverlayService compatibility.</summary>
+#pragma warning disable CS0067
     public event EventHandler? CloseRequested;
+#pragma warning restore CS0067
 
     public OverlayWindow()
     {
@@ -94,14 +96,17 @@ public partial class OverlayWindow : Window
 
             var wasHidden = !IsVisible;
             Show();
+            // Ensure window is active and visible
+            if (WindowState == WindowState.Minimized)
+            {
+                WindowState = WindowState.Normal;
+            }
+            Activate();
+            Topmost = true;
+            Topmost = false;
             if (wasHidden && _overlayFadeTransitionMs > 0)
             {
-                Opacity = 0;
-                var fadeIn = new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(_overlayFadeTransitionMs))
-                {
-                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-                };
-                BeginAnimation(OpacityProperty, fadeIn);
+                // Keep window visible, just animate refresh
                 AnimateOverlayRefresh();
             }
             else
@@ -198,26 +203,127 @@ public partial class OverlayWindow : Window
 
     private void ApplyLayout()
     {
-        switch (_currentLayout)
-        {
-            case OverlayLayout.Horizontal:
-                SuggestionsContainer.Orientation = Orientation.Horizontal;
-                break;
-            case OverlayLayout.Vertical:
-                SuggestionsContainer.Orientation = Orientation.Vertical;
-                break;
-        }
+        // SuggestionsContainer is a WrapPanel — always horizontal, wraps automatically
     }
 
     private void RenderSuggestions()
     {
         SuggestionsContainer.Children.Clear();
+        SentenceContainer.Children.Clear();
 
+        var hasSentence = false;
         foreach (var suggestion in _currentSuggestions)
         {
-            var button = CreateSuggestionButton(suggestion);
-            SuggestionsContainer.Children.Add(button);
+            if (suggestion.Kind == SuggestionKind.AiSentence)
+            {
+                var btn = CreateSentenceButton(suggestion);
+                SentenceContainer.Children.Add(btn);
+                hasSentence = true;
+            }
+            else
+            {
+                var button = CreateSuggestionButton(suggestion);
+                SuggestionsContainer.Children.Add(button);
+            }
         }
+
+        SentenceContainer.Visibility = hasSentence ? Visibility.Visible : Visibility.Collapsed;
+        SentenceSeparator.Visibility = hasSentence ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private Button CreateSentenceButton(SuggestionItem suggestion)
+    {
+        var aiLabel = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0x99, 0x60, 0x40, 0xCC)),
+            CornerRadius = new CornerRadius(5),
+            Padding = new Thickness(6, 2, 6, 2),
+            Margin = new Thickness(0, 0, 10, 0),
+            Child = new TextBlock
+            {
+                Text = "AI",
+                FontSize = 10,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xCC, 0xAA, 0xFF)),
+                VerticalAlignment = VerticalAlignment.Center
+            }
+        };
+
+        var sentenceText = new TextBlock
+        {
+            Text = suggestion.DisplayText,
+            FontSize = 15,
+            FontFamily = new FontFamily("Segoe UI"),
+            FontStyle = FontStyles.Italic,
+            FontWeight = FontWeights.Normal,
+            Foreground = new SolidColorBrush(Color.FromArgb(0xDD, 0xCC, 0xBB, 0xFF)),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 800
+        };
+
+        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(aiLabel);
+        row.Children.Add(sentenceText);
+
+        var sentenceBg = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
+        sentenceBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x28, 0x88, 0x44, 0xFF), 0));
+        sentenceBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x12, 0x44, 0x22, 0xFF), 1));
+
+        var pill = new Border
+        {
+            Background = sentenceBg,
+            BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0x99, 0x77, 0xFF)),
+            CornerRadius = new CornerRadius(10),
+            Margin = new Thickness(2, 2, 2, 2),
+            Padding = new Thickness(14, 8, 16, 8),
+            Child = row
+        };
+
+        var button = new Button
+        {
+            Content = pill,
+            Tag = suggestion.Slot,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            Margin = new Thickness(0),
+            Cursor = Cursors.Hand,
+            Focusable = false,
+            Style = (Style)TryFindResource("PillButtonStyle")
+        };
+
+        button.MouseEnter += (_, _) =>
+        {
+            if (button.Content is Border b)
+            {
+                var hoverBg = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
+                hoverBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x44, 0xAA, 0x66, 0xFF), 0));
+                hoverBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x22, 0x66, 0x33, 0xFF), 1));
+                b.Background = hoverBg;
+                b.BorderBrush = new SolidColorBrush(Color.FromArgb(0x66, 0xBB, 0x88, 0xFF));
+            }
+        };
+        button.MouseLeave += (_, _) =>
+        {
+            if (button.Content is Border b)
+            {
+                var normalBg = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(1, 0) };
+                normalBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x28, 0x88, 0x44, 0xFF), 0));
+                normalBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x12, 0x44, 0x22, 0xFF), 1));
+                b.Background = normalBg;
+                b.BorderBrush = new SolidColorBrush(Color.FromArgb(0x33, 0x99, 0x77, 0xFF));
+            }
+        };
+
+        button.Click += (s, e) =>
+        {
+            if (s is Button btn && btn.Tag is int slot)
+                SuggestionSelected?.Invoke(this, slot);
+        };
+
+        return button;
     }
 
     /// <summary>Moves keyboard highlight in list order (Up = earlier, Down = later); wraps within the page.</summary>
@@ -277,26 +383,32 @@ public partial class OverlayWindow : Window
             }
 
             var selected = _highlightedVisualIndex == i;
-            border.Background = (Brush)FindResource(selected ? "CardHover" : "CardBackground");
-            border.BorderBrush = (Brush)FindResource(selected ? "AccentGreen" : "BorderSubtle");
-            border.BorderThickness = new Thickness(selected ? 2 : 1);
+            if (selected)
+            {
+                var selBg = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+                selBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x55, 0x4A, 0xDE, 0x80), 0));
+                selBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x33, 0x00, 0xAA, 0x55), 1));
+                border.Background = selBg;
+                border.BorderBrush = new SolidColorBrush(Color.FromArgb(0xCC, 0x4A, 0xDE, 0x80));
+                border.BorderThickness = new Thickness(1.5);
+                border.Effect = new DropShadowEffect { Color = Color.FromArgb(0xFF, 0x4A, 0xDE, 0x80), BlurRadius = 12, ShadowDepth = 0, Opacity = 0.5 };
+            }
+            else
+            {
+                var bg = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+                bg.GradientStops.Add(new GradientStop(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF), 0));
+                bg.GradientStops.Add(new GradientStop(Color.FromArgb(0x18, 0x88, 0xBB, 0xFF), 1));
+                border.Background = bg;
+                border.BorderBrush = new SolidColorBrush(Color.FromArgb(0x44, 0xFF, 0xFF, 0xFF));
+                border.BorderThickness = new Thickness(1);
+                border.Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 8, ShadowDepth = 2, Direction = 270, Opacity = 0.3 };
+            }
         }
     }
 
     private System.Windows.Controls.Border? GetSuggestionBorder(Button button)
     {
-        if (button.Template?.FindName("border", button) is System.Windows.Controls.Border existing)
-        {
-            return existing;
-        }
-
-        if (!button.IsInitialized)
-        {
-            return null;
-        }
-
-        button.ApplyTemplate();
-        return button.Template?.FindName("border", button) as System.Windows.Controls.Border;
+        return button.Content as System.Windows.Controls.Border;
     }
 
     private System.Windows.Controls.Border? GetGlowBorder(Button button)
@@ -383,95 +495,111 @@ public partial class OverlayWindow : Window
         BeginAnimation(OpacityProperty, fadeOut);
     }
 
-    /// <summary>Non-blocking status line (e.g. AI unavailable). Pass null to clear.</summary>
+    /// <summary>Non-blocking status line — UI element removed, no-op.</summary>
     public void SetOverlayStatusHint(string? message)
     {
-        if (string.IsNullOrWhiteSpace(message))
-        {
-            OverlayStatusHint.Visibility = Visibility.Collapsed;
-            OverlayStatusHint.Text = "";
-            return;
-        }
-
-        OverlayStatusHint.Text = message.Trim();
-        OverlayStatusHint.Visibility = Visibility.Visible;
+        // Status hint UI removed - minimal overlay shows only words
     }
 
     private Button CreateSuggestionButton(SuggestionItem suggestion)
     {
-        var stackPanel = new StackPanel
+        // Number badge — small, subtle, top-left
+        var numBadge = new Border
         {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        // Pill-shaped number badge
-        var badgeBorder = new Border
-        {
-            Style = (Style)FindResource("SlotBadgeStyle"),
+            Background = new SolidColorBrush(Color.FromArgb(0x88, 0x4A, 0xDE, 0x80)),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(5, 1, 5, 1),
+            Margin = new Thickness(0, 0, 10, 0),
             Child = new TextBlock
             {
                 Text = suggestion.Slot.ToString(),
-                FontSize = 15,
+                FontSize = 11,
                 FontWeight = FontWeights.Bold,
-                Foreground = new SolidColorBrush(Color.FromRgb(0x0F, 0x0F, 0x14)),
-                HorizontalAlignment = HorizontalAlignment.Center,
+                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xE0, 0xFF, 0xE8)),
                 VerticalAlignment = VerticalAlignment.Center
             }
         };
 
-        stackPanel.Children.Add(badgeBorder);
-
-        var textBlock = new TextBlock
+        // Word text — large, white
+        var wordText = new TextBlock
         {
             Text = suggestion.DisplayText,
             FontSize = 22,
             FontFamily = new FontFamily("Segoe UI"),
             FontWeight = FontWeights.SemiBold,
-            Foreground = (Brush)FindResource("TextPrimary"),
-            VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.Wrap,
-            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 290 : 420
+            Foreground = new SolidColorBrush(Color.FromArgb(0xF0, 0xFF, 0xFF, 0xFF)),
+            VerticalAlignment = VerticalAlignment.Center
         };
 
-        stackPanel.Children.Add(textBlock);
+        // Row
+        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(numBadge);
+        row.Children.Add(wordText);
 
+        // Pill border
+        var pillBg = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+        pillBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF), 0));
+        pillBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x18, 0x88, 0xBB, 0xFF), 1));
+
+        var pill = new Border
+        {
+            Background = pillBg,
+            BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(0x44, 0xFF, 0xFF, 0xFF)),
+            CornerRadius = new CornerRadius(14),
+            Margin = new Thickness(5, 4, 5, 4),
+            Padding = new Thickness(14, 8, 16, 8),
+            Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 8, ShadowDepth = 2, Direction = 270, Opacity = 0.3 },
+            Child = row
+        };
+
+        // Button wrapper
         var button = new Button
         {
-            Content = stackPanel,
+            Content = pill,
             Tag = suggestion.Slot,
-            Style = (Style)FindResource("SuggestionButtonStyle"),
-            Opacity = 0,
-            MaxWidth = _currentLayout == OverlayLayout.Horizontal ? 330 : 460,
-            ToolTip = BuildSuggestionToolTip(suggestion),
-            Margin = _currentLayout == OverlayLayout.Horizontal
-                ? new Thickness(5, 0, 5, 0)
-                : new Thickness(0, 5, 0, 5)
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            Margin = new Thickness(0),
+            Cursor = Cursors.Hand,
+            Focusable = false,
+            Opacity = 1,
+            Style = (Style)TryFindResource("PillButtonStyle")
         };
 
-        // Store score for glow animation
-        button.SetValue(AttachedSuggestionScoreProperty, suggestion.Score);
+        button.RenderTransform = new TranslateTransform(0, 0);
 
-        // Apply glow effect to high-confidence suggestions (score > 3000)
-        if (suggestion.Score > 3000)
+        // Hover effects
+        button.MouseEnter += (_, _) =>
         {
-            ApplyGlowEffect(button, suggestion.Score);
-        }
-
-        button.RenderTransformOrigin = new Point(0.5, 0.5);
-        button.RenderTransform = new TranslateTransform
+            if (GetSuggestionBorder(button) is { } b)
+            {
+                var hoverBg = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+                hoverBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF), 0));
+                hoverBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x33, 0x88, 0xCC, 0xFF), 1));
+                b.Background = hoverBg;
+                b.BorderBrush = new SolidColorBrush(Color.FromArgb(0x88, 0xFF, 0xFF, 0xFF));
+                b.Effect = new DropShadowEffect { Color = Color.FromArgb(0xFF, 0x88, 0xCC, 0xFF), BlurRadius = 14, ShadowDepth = 0, Opacity = 0.4 };
+            }
+        };
+        button.MouseLeave += (_, _) =>
         {
-            X = _currentLayout == OverlayLayout.Horizontal ? 14 : 0,
-            Y = _currentLayout == OverlayLayout.Vertical ? 14 : 0
+            if (GetSuggestionBorder(button) is { } b)
+            {
+                var normalBg = new LinearGradientBrush { StartPoint = new Point(0, 0), EndPoint = new Point(0, 1) };
+                normalBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF), 0));
+                normalBg.GradientStops.Add(new GradientStop(Color.FromArgb(0x18, 0x88, 0xBB, 0xFF), 1));
+                b.Background = normalBg;
+                b.BorderBrush = new SolidColorBrush(Color.FromArgb(0x44, 0xFF, 0xFF, 0xFF));
+                b.Effect = new DropShadowEffect { Color = Colors.Black, BlurRadius = 8, ShadowDepth = 2, Direction = 270, Opacity = 0.3 };
+            }
         };
 
         button.Click += (s, e) =>
         {
             if (s is Button btn && btn.Tag is int slot)
-            {
                 SuggestionSelected?.Invoke(this, slot);
-            }
         };
 
         return button;
@@ -537,27 +665,31 @@ public partial class OverlayWindow : Window
         }
     }
 
-    /// <param name="textExclusionBounds">
-    /// Screen rectangle the overlay must not intersect (UIA text field union Win32 caret rect, inflated).
-    /// If null, a conservative fallback around the caret is used.
-    /// </param>
+    /// <summary>
+    /// Shows the window immediately (for when Writer is woken but no suggestions yet).
+    /// </summary>
+    public void ShowWindow()
+    {
+        Show();
+        Topmost = true;
+        Activate();
+    }
+
+    /// <summary>
+    /// Positions the overlay near the caret point. As an overlay, it follows the caret.
+    /// </summary>
     public void PositionNearPoint(int caretX, int caretY, ScreenPosition preferredPosition, Rect? textExclusionBounds = null)
     {
-        UpdateLayout();
+        // Calculate window size (use desired or actual)
+        var windowWidth = Width;
+        var windowHeight = Height;
+        if (double.IsNaN(windowWidth) || windowWidth <= 0)
+            windowWidth = 320;
+        if (double.IsNaN(windowHeight) || windowHeight <= 0)
+            windowHeight = 140;
 
-        // Ensure window is measured
-        if (ActualWidth == 0 || ActualHeight == 0)
-        {
-            Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            Arrange(new Rect(0, 0, DesiredSize.Width, DesiredSize.Height));
-            UpdateLayout();
-        }
-
-        // Work area for the monitor that contains the caret (multi-monitor)
-        double screenLeft;
-        double screenTop;
-        double screenRight;
-        double screenBottom;
+        // Get screen metrics
+        double screenLeft, screenTop, screenRight, screenBottom;
         if (Win32Screen.TryGetWorkAreaForPoint(caretX, caretY, out var wl, out var wt, out var wr, out var wb))
         {
             screenLeft = wl;
@@ -567,117 +699,74 @@ public partial class OverlayWindow : Window
         }
         else
         {
-            var wa = SystemParameters.WorkArea;
-            screenLeft = wa.Left;
-            screenTop = wa.Top;
-            screenRight = wa.Right;
-            screenBottom = wa.Bottom;
+            var area = SystemParameters.WorkArea;
+            screenLeft = area.Left;
+            screenTop = area.Top;
+            screenRight = area.Right;
+            screenBottom = area.Bottom;
         }
 
-        var measuredWidth = ActualWidth > 0 ? ActualWidth : DesiredSize.Width;
-        var measuredHeight = ActualHeight > 0 ? ActualHeight : DesiredSize.Height;
-        var windowWidth = measuredWidth > 0 ? measuredWidth : 600;
-        var windowHeight = measuredHeight > 0 ? measuredHeight : 80;
-
-        var exclusion = ResolveExclusionBounds(caretX, caretY, textExclusionBounds);
-        var fieldBottom = exclusion.Bottom;
-        var fieldTop = exclusion.Top;
-
-        const double sideGap = 12;
-        const double placementGap = 10;
-        double left = caretX;
-        double top;
-        double besideL;
-        double besideT;
-
-        // Space for overlay fully above/below the exclusion zone (including a larger gap for better text field protection)
-        var spaceBelowField = screenBottom - (fieldBottom + placementGap);
-        var spaceAboveField = (fieldTop - placementGap) - screenTop;
-
-        if (preferredPosition == ScreenPosition.Left)
+        // Try positioning beside text exclusion area (text field) if provided
+        if (textExclusionBounds.HasValue &&
+            TryDockBesideExclusion(textExclusionBounds.Value, windowWidth, windowHeight,
+                screenLeft, screenTop, screenRight, screenBottom, out var dockedX, out var dockedY))
         {
-            left = exclusion.Left - windowWidth - sideGap;
-            top = exclusion.Top + (exclusion.Height - windowHeight) / 2;
+            Left = dockedX;
+            Top = dockedY;
+            return;
         }
-        else if (preferredPosition == ScreenPosition.Right)
+
+        // Default: position based on preferred position and caret location
+        int x, y;
+        const int margin = 8;
+
+        switch (preferredPosition)
         {
-            left = exclusion.Right + sideGap;
-            top = exclusion.Top + (exclusion.Height - windowHeight) / 2;
-        }
-        else if (preferredPosition == ScreenPosition.Above)
-        {
-            if (spaceAboveField >= windowHeight)
-            {
-                top = fieldTop - windowHeight - placementGap;
-            }
-            else if (TryDockBesideExclusion(exclusion, windowWidth, windowHeight, screenLeft, screenTop, screenRight, screenBottom, sideGap, out besideL, out besideT))
-            {
-                left = besideL;
-                top = besideT;
-            }
-            else if (spaceBelowField >= windowHeight)
-            {
-                top = fieldBottom + placementGap;
-            }
-            else
-            {
-                top = Math.Max(screenTop, fieldTop - windowHeight - placementGap);
-            }
-        }
-        else if (preferredPosition == ScreenPosition.Below)
-        {
-            if (spaceBelowField >= windowHeight)
-            {
-                top = fieldBottom + placementGap;
-            }
-            else if (spaceAboveField >= windowHeight)
-            {
-                top = fieldTop - windowHeight - placementGap;
-            }
-            else if (TryDockBesideExclusion(exclusion, windowWidth, windowHeight, screenLeft, screenTop, screenRight, screenBottom, sideGap, out besideL, out besideT))
-            {
-                left = besideL;
-                top = besideT;
-            }
-            else
-            {
-                top = screenBottom - windowHeight - 8;
-            }
-        }
-        else
-        {
-            // Auto (Writer default): place above the text field so the caret line stays visible
-            var canPlaceAbove = spaceAboveField >= windowHeight;
-            var canPlaceBelow = spaceBelowField >= windowHeight;
+            case ScreenPosition.Below:
+                x = caretX;
+                y = caretY + margin;
+                // Ensure stays on screen
+                if (x + windowWidth > screenRight)
+                    x = (int)(screenRight - windowWidth - margin);
+                if (y + windowHeight > screenBottom)
+                    y = caretY - (int)windowHeight - margin; // Flip to above
+                break;
 
-            if (canPlaceAbove)
-            {
-                top = fieldTop - windowHeight - placementGap;
-            }
-            else if (canPlaceBelow)
-            {
-                top = fieldBottom + placementGap;
-            }
-            else if (TryDockBesideExclusion(exclusion, windowWidth, windowHeight, screenLeft, screenTop, screenRight, screenBottom, sideGap, out besideL, out besideT))
-            {
-                left = besideL;
-                top = besideT;
-            }
-            else
-            {
-                top = Math.Max(screenTop, fieldTop - windowHeight - placementGap);
-            }
+            case ScreenPosition.Above:
+                x = caretX;
+                y = caretY - (int)windowHeight - margin;
+                if (y < screenTop)
+                    y = caretY + margin; // Flip to below
+                break;
+
+            case ScreenPosition.Right:
+                x = caretX + margin;
+                y = caretY - (int)(windowHeight / 2);
+                if (x + windowWidth > screenRight)
+                    x = caretX - (int)windowWidth - margin; // Flip to left
+                break;
+
+            case ScreenPosition.Left:
+                x = caretX - (int)windowWidth - margin;
+                y = caretY - (int)(windowHeight / 2);
+                if (x < screenLeft)
+                    x = caretX + margin; // Flip to right
+                break;
+
+            default:
+                x = caretX;
+                y = caretY + margin;
+                break;
         }
 
-        NudgeHorizontalClearOfExclusion(ref left, top, windowWidth, windowHeight, exclusion, screenLeft, screenRight, sideGap);
+        // Final bounds clamp
+        if (x < screenLeft) x = (int)screenLeft + margin;
+        if (y < screenTop) y = (int)screenTop + margin;
+        if (x + windowWidth > screenRight) x = (int)(screenRight - windowWidth - margin);
+        if (y + windowHeight > screenBottom) y = (int)(screenBottom - windowHeight - margin);
 
-        left = Math.Max(screenLeft + 4, Math.Min(left, screenRight - windowWidth - 4));
-        top = Math.Max(screenTop, Math.Min(top, screenBottom - windowHeight));
-
-        ResolveExclusionOverlap(ref left, ref top, windowWidth, windowHeight, exclusion, screenLeft, screenTop, screenRight, screenBottom);
-
-        Left = left;
-        Top = top;
+        Left = x;
+        Top = y;
     }
 
     /// <summary>Places the overlay entirely to the right or left of <paramref name="exclusion"/> when there is room.</summary>
@@ -689,28 +778,35 @@ public partial class OverlayWindow : Window
         double screenTop,
         double screenRight,
         double screenBottom,
-        double gap,
-        out double left,
-        out double top)
+        out int x,
+        out int y)
     {
-        top = exclusion.Top + (exclusion.Height - windowHeight) / 2;
-        top = Math.Max(screenTop, Math.Min(top, screenBottom - windowHeight));
+        const int margin = 12;
+        x = 0;
+        y = 0;
 
-        var rightDock = exclusion.Right + gap;
-        if (rightDock + windowWidth <= screenRight)
+        // Try right side of exclusion
+        var rightX = exclusion.Right + margin;
+        var rightY = exclusion.Top + (exclusion.Height - windowHeight) / 2;
+
+        if (rightX + windowWidth <= screenRight && rightY >= screenTop && rightY + windowHeight <= screenBottom)
         {
-            left = rightDock;
+            x = (int)rightX;
+            y = (int)Math.Max(screenTop + margin, Math.Min(rightY, screenBottom - windowHeight - margin));
             return true;
         }
 
-        var leftDock = exclusion.Left - gap - windowWidth;
-        if (leftDock >= screenLeft)
+        // Try left side of exclusion
+        var leftX = exclusion.Left - windowWidth - margin;
+        var leftY = exclusion.Top + (exclusion.Height - windowHeight) / 2;
+
+        if (leftX >= screenLeft && leftY >= screenTop && leftY + windowHeight <= screenBottom)
         {
-            left = leftDock;
+            x = (int)leftX;
+            y = (int)Math.Max(screenTop + margin, Math.Min(leftY, screenBottom - windowHeight - margin));
             return true;
         }
 
-        left = 0;
         return false;
     }
 
@@ -892,34 +988,27 @@ public partial class OverlayWindow : Window
             string.IsNullOrWhiteSpace(fontFamily) ? "Segoe UI" : fontFamily);
         var fw = ParseFontWeight(fontWeight);
 
-        ApplyColorResource("AccentGreen", accentColor);
-        ApplyColorResource("AccentStripe", accentColor);
-        ApplyColorResource("AccentGreenDim", DimColor(accentColor, 0.35));
-        ApplyTranslucentPaint("PrimaryBackground", bgColor, 0);
-        ApplyTranslucentPaint("BorderColor", "#2A2B36", 0);
-        ApplyTranslucentPaint("BorderSubtle", "#222330", 0);
-        ApplyTranslucentPaint("CardBackground", cardColor, cardAlpha);
-        ApplyTranslucentPaint("SecondaryBackground", DimColor(cardColor, 0.72), cardAlpha);
-        ApplyTranslucentPaint("CardHover", BlendWithWhite(cardColor, 0.08), cardAlpha);
-        ApplyColorResource("TextPrimary", textColor);
+        // Glass theme - transparent background, no colored fill
+        Background = System.Windows.Media.Brushes.Transparent;
 
         FontFamily = ff;
 
         foreach (var child in SuggestionsContainer.Children.OfType<Button>())
         {
-            child.FontSize = baseFontSize;
             child.FontFamily = ff;
             child.FontWeight = fw;
-            if (child.Content is StackPanel stackPanel
-                && stackPanel.Children.Count > 1
-                && stackPanel.Children[1] is TextBlock textBlock)
+            // pill Border > StackPanel row > [badge Border, TextBlock]
+            if (child.Content is System.Windows.Controls.Border pill
+                && pill.Child is StackPanel row
+                && row.Children.Count > 1
+                && row.Children[1] is TextBlock wordText)
             {
-                textBlock.FontSize = baseFontSize;
-                textBlock.FontFamily = ff;
-                textBlock.FontWeight = fw;
+                wordText.FontSize = baseFontSize;
+                wordText.FontFamily = ff;
+                wordText.FontWeight = fw;
             }
 
-            child.MinHeight = largeTextMode ? 70 : 56;
+            child.MinHeight = largeTextMode ? 56 : 44;
         }
     }
 
@@ -946,35 +1035,6 @@ public partial class OverlayWindow : Window
         }
     }
 
-    // ── Hover-reveal close button ──
-    private void OverlayRoot_MouseEnter(object sender, MouseEventArgs e)
-    {
-        FadeCloseButton(1.0, 140);
-    }
-
-    private void OverlayRoot_MouseLeave(object sender, MouseEventArgs e)
-    {
-        FadeCloseButton(0.0, 220);
-    }
-
-    private void FadeCloseButton(double targetOpacity, int durationMs)
-    {
-        if (CloseButton == null)
-            return;
-
-        var animation = new DoubleAnimation
-        {
-            To = targetOpacity,
-            Duration = new Duration(TimeSpan.FromMilliseconds(durationMs)),
-            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
-        };
-        CloseButton.BeginAnimation(OpacityProperty, animation);
-    }
-
-    private void CloseButton_Click(object sender, RoutedEventArgs e)
-    {
-        CloseRequested?.Invoke(this, EventArgs.Empty);
-    }
 
     private static FontWeight ParseFontWeight(string? weight) => (weight?.Trim().ToLowerInvariant()) switch
     {
@@ -1059,25 +1119,7 @@ public partial class OverlayWindow : Window
 
     private void AnimateOverlayRefresh()
     {
-        OverlayBorder.RenderTransformOrigin = new Point(0.5, 0.5);
-
-        if (OverlayBorder.RenderTransform is not ScaleTransform scaleTransform)
-        {
-            scaleTransform = new ScaleTransform(1, 1);
-            OverlayBorder.RenderTransform = scaleTransform;
-        }
-
-        var scaleX = new DoubleAnimation(0.985, 1, OverlayRefreshDuration)
-        {
-            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
-        };
-        var scaleY = new DoubleAnimation(0.985, 1, OverlayRefreshDuration)
-        {
-            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut }
-        };
-
-        scaleTransform.BeginAnimation(ScaleTransform.ScaleXProperty, scaleX);
-        scaleTransform.BeginAnimation(ScaleTransform.ScaleYProperty, scaleY);
+        // Overlay border removed - no refresh animation needed
     }
 
     private void AnimateSuggestionItems()

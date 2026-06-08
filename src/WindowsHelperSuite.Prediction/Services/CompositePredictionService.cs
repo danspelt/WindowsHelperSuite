@@ -83,7 +83,7 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
             CaretIndex = full.Length,
             Context = engineCtx,
             MaxSuggestions = maxSlots,
-            PreferLocalOnly = true
+            PreferLocalOnly = false
         };
 
         var result = _writerEngine.PredictAsync(request, CancellationToken.None).GetAwaiter().GetResult();
@@ -176,7 +176,7 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
                 break;
             }
 
-            var display = c.Text.Trim();
+            var display = CleanSuggestionText(c.Text);
             if (display.Length == 0)
             {
                 continue;
@@ -217,6 +217,25 @@ public sealed class CompositePredictionService : CoreInterfaces.IPredictionServi
         }
 
         return list;
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex _leadingMarker =
+        new(@"^[\d]+[.)\-:]\s*", System.Text.RegularExpressions.RegexOptions.Compiled);
+    private static readonly System.Text.RegularExpressions.Regex _multiSpace =
+        new(@"[ \t\u00A0]{2,}", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static string CleanSuggestionText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var s = text.Trim();
+        s = _leadingMarker.Replace(s, "");
+        s = s.TrimStart('-', '•', '*', '·', '"', '\'', '`').Trim();
+        s = _multiSpace.Replace(s, " ").Trim();
+        s = s.TrimEnd(',', ';');
+        var words = s.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length > 6) s = string.Join(" ", words[..6]);
+        if (s.Length > 0) s = char.ToUpperInvariant(s[0]) + s[1..];
+        return s;
     }
 
     public bool WordBankContainsWord(string word) => _wordBank.WordBankContainsWord(word);

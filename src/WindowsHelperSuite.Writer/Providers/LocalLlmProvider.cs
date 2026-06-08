@@ -88,15 +88,19 @@ public sealed class LocalLlmProvider : IPredictionProvider
                 : $"Word before the fragment being typed: \"{prev}\"\n";
 
         return $"""
-            Complete the user's text with up to 4 short writing suggestions.
+            The user is typing. Predict what they are trying to say.
 
             {modeHint}
             Context mode: {request.Context.TypingMode}
             {prevLine}Text so far: "{request.CurrentSentence}"
 
-            Return one suggestion per line.
-            Do not number them.
-            Keep suggestions short.
+            Reply with EXACTLY this format — nothing else:
+            LINE 1: A single complete sentence that finishes what the user is typing.
+            LINE 2: One short next word or phrase (2-3 words max).
+            LINE 3: Another short next word or phrase (2-3 words max).
+            LINE 4: Another short next word or phrase (2-3 words max).
+
+            Do not number lines. Do not add labels. Do not explain.
             """;
     }
 }

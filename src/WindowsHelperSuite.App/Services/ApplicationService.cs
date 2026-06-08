@@ -42,7 +42,7 @@ public class ApplicationService : IDisposable
 
     private readonly ISettingsService _settingsService;
     private readonly ILoggingService _loggingService;
-    private readonly TrayIconService _trayIconService;
+    // private readonly TrayIconService _trayIconService; // Removed - Writer is main window
     private readonly HotkeyService _hotkeyService;
     private readonly OverlayService _overlayService;
     private readonly InputService _inputService;
@@ -57,10 +57,14 @@ public class ApplicationService : IDisposable
     private readonly System.Timers.Timer _focusCheckTimer;
     /// <summary>Cap for phrase/word-bank context list only; prediction uses the full sentence from InputService.</summary>
     private const int MaxPhraseContextWords = 4096;
-    private int _focusLostCount = 0; // Require multiple failed checks before hiding
+#pragma warning disable CS0414
+    private int _focusLostCount = 0;
+#pragma warning restore CS0414
     private int _mouseDismissAnchorX = int.MinValue;
     private int _mouseDismissAnchorY = int.MinValue;
-    private const int MouseDismissMoveThresholdSq = 16; // 4px movement
+    private const int MouseDismissMoveThresholdSq = 6400; // 80px movement
+    private const long MouseDismissGraceMs = 2000; // ignore mouse-dismiss for 2s after showing
+    private long _overlayShownTick;
     private SpeakMode _speakMode = SpeakMode.Both;
     private readonly object _writerStateLock = new();
     // Writer starts asleep — must be woken with the user-configured WakeWriter hotkey.
@@ -106,10 +110,11 @@ public class ApplicationService : IDisposable
         _conversationStore = new JsonConversationStore(_loggingService);
         _aiSuggestionService = new AiSuggestionService(_loggingService, BuildOverlayAiSettings);
 
-        _trayIconService = new TrayIconService(_loggingService, _settingsService, ReloadHotkeys, OpenChat, OpenLiveCaptions);
+        // Tray icon removed - Writer is now the main window
+        // _trayIconService = new TrayIconService(_loggingService, _settingsService, ReloadHotkeys, OpenChat, OpenLiveCaptions);
         _hotkeyService = new HotkeyService(_loggingService);
         _overlayService = new OverlayService(_loggingService, _settingsService);
-        _trayIconService.OverlayService = _overlayService;
+        // _trayIconService.OverlayService = _overlayService;
         _inputService = new InputService(
             _loggingService,
             new CachingSecretFieldDetector(new SecretFieldDetector()),
@@ -144,8 +149,8 @@ public class ApplicationService : IDisposable
 
         _modeManager = new ModeManager(_settingsService, _loggingService, ApplyApplicationMode);
         _modeManager.Initialize();
-        _trayIconService.ApplyModeIndicator(_modeManager.CurrentMode);
-        _modeManager.ModeChanged += (_, mode) => _trayIconService.ApplyModeIndicator(mode);
+        // _trayIconService.ApplyModeIndicator(_modeManager.CurrentMode);
+        // _modeManager.ModeChanged += (_, mode) => _trayIconService.ApplyModeIndicator(mode);
 
         _inputService.SecretFieldProtectionChanged += (_, isProtected) =>
             DeferWriterUi(() => OnSecretFieldProtectionChanged(_, isProtected));
@@ -169,6 +174,9 @@ public class ApplicationService : IDisposable
         // Install the writer hook first, then hotkeys, so the hotkey LL hook runs before Input (last-installed = first in chain).
         _inputService.Start();
         _hotkeyService.Start();
+
+        // Writer starts hidden - only shows with wake key (`)
+        _loggingService.Information("Writer started hidden - press F9 to wake");
 
         TryStartVoiceBridgeListener();
 
@@ -240,13 +248,13 @@ public class ApplicationService : IDisposable
 
     public void Run()
     {
-        _loggingService.Information("Application running");
+        _loggingService.Information("Application running in Writer-only mode (no system tray)");
     }
 
     public void RequestShowSettings()
     {
-        _loggingService.Information("Activation requested (show settings)");
-        _trayIconService.ShowSettings();
+        _loggingService.Information("Activation requested (show settings) - no settings UI in Writer-only mode");
+        // Settings UI not available in Writer-only mode
     }
 
     /// <summary>
@@ -336,16 +344,18 @@ public class ApplicationService : IDisposable
         };
         _inputService.OverlayDismissRequested += (_, e) => DeferWriterUi(() =>
         {
-            _speechService.Stop();
-            HideOverlay();
-            lock (_writerStateLock)
-            {
-                _currentWord = string.Empty;
-                _currentSuggestions = [];
-            }
-
+            // Only Esc actually dismisses. SessionEnded (sentence done, inactivity,
+            // non-writer field) is ignored — overlay stays until mouse-move or Esc.
             if (e.Reason == OverlayDismissReason.Soft)
             {
+                _speechService.Stop();
+                HideOverlay();
+                lock (_writerStateLock)
+                {
+                    _currentWord = string.Empty;
+                    _currentSuggestions = [];
+                }
+
                 _hasValidTextInput = false;
                 _writerAwake = false;
                 _loggingService.Information("Writer hidden via Esc — press ` to wake");
@@ -353,8 +363,7 @@ public class ApplicationService : IDisposable
                 return;
             }
 
-            _hasValidTextInput = false;
-            _loggingService.Debug($"Overlay hidden — session ended ({e.Reason}); writer stays awake");
+            _loggingService.Debug($"Dismiss request ignored ({e.Reason}) — overlay stays (mouse/Esc/Enter only)");
         });
 
         _inputService.TypingStopped += (_, _) => DeferWriterUi(() =>
@@ -369,8 +378,7 @@ public class ApplicationService : IDisposable
 
         _inputService.InvalidTypingDetected += (_, _) => DeferWriterUi(() =>
         {
-            HideOverlay();
-            _loggingService.Debug("Overlay hidden - invalid typing detected (desktop)");
+            _loggingService.Debug("InvalidTypingDetected - overlay stays visible (dismissed only by mouse/Esc)");
         });
 
         _inputService.SelectionKeyPressed += (_, slot) =>
@@ -507,6 +515,7 @@ public class ApplicationService : IDisposable
 
     private void HideOverlay()
     {
+        _loggingService.Debug($"HideOverlay called from: {new System.Diagnostics.StackTrace(1, false).GetFrame(0)?.GetMethod()?.Name}");
         _focusCheckTimer.Stop();
         _overlayService.HideSuggestions();
         _inputService.IsOverlayVisible = false;
@@ -520,6 +529,7 @@ public class ApplicationService : IDisposable
             return;
         }
 
+        _loggingService.Debug("HideOverlayFromMouseMove called");
         _overlayService.HideSuggestions();
         _inputService.IsOverlayVisible = false;
         ResetMouseDismissTracking();
@@ -528,6 +538,7 @@ public class ApplicationService : IDisposable
     /// <summary>Show overlay after wake when there is no caret yet (desktop / non-text focus).</summary>
     private void ShowWriterAwaitingTextField()
     {
+        _hasValidTextInput = true;
         _inputService.IsOverlayVisible = true;
         CaptureMouseDismissAnchor();
         _focusCheckTimer.Start();
@@ -540,7 +551,16 @@ public class ApplicationService : IDisposable
             _currentSuggestions = suggestions;
         }
 
-        _overlayService.ShowSuggestions(suggestions);
+        if (suggestions.Count > 0)
+        {
+            _overlayService.ShowSuggestions(suggestions);
+        }
+        else
+        {
+            // No suggestions yet — force the window visible so it doesn't instantly hide
+            _overlayService.ShowWindow();
+        }
+
         _overlayService.SetOverlayStatusHint("Focus a text field and type — suggestions will follow the caret");
         _overlayService.RepositionAtCaret();
         _loggingService.Debug("Writer awake — awaiting text field focus");
@@ -548,6 +568,7 @@ public class ApplicationService : IDisposable
 
     private void CaptureMouseDismissAnchor()
     {
+        _overlayShownTick = Environment.TickCount64;
         if (Win32Cursor.TryGetPosition(out var x, out var y))
         {
             _mouseDismissAnchorX = x;
@@ -564,6 +585,12 @@ public class ApplicationService : IDisposable
     private void TryDismissOverlayOnMouseMove()
     {
         if (!_writerAwake || !_inputService.IsOverlayVisible)
+        {
+            return;
+        }
+
+        // Grace period after showing — don't dismiss from minor jitter right after wake
+        if (Environment.TickCount64 - _overlayShownTick < MouseDismissGraceMs)
         {
             return;
         }
@@ -592,8 +619,9 @@ public class ApplicationService : IDisposable
             return;
         }
 
+        _writerAwake = false;
         HideOverlayFromMouseMove();
-        _loggingService.Debug("Overlay hidden — mouse moved");
+        _loggingService.Information("Writer hidden — mouse moved (press F9 to wake)");
     }
 
     private void OnSecretFieldProtectionChanged(object? sender, bool isProtected)
@@ -641,27 +669,12 @@ public class ApplicationService : IDisposable
             var isValidCaret = hasCaret && (caretX != 0 || caretY != 0);
             if (!isValidCaret)
             {
-                _focusLostCount++;
-                // Require 3 consecutive failed checks (1.5s) before hiding
-                // This prevents flickering when caret briefly becomes unavailable
-                if (_focusLostCount >= 3)
-                {
-                    _loggingService.Debug("Focus check: no text field focused for 1.5s - hiding overlay");
-                    System.Windows.Application.Current?.Dispatcher.Invoke(() => HideOverlay());
-                    lock (_writerStateLock)
-                    {
-                        _currentWord = string.Empty;
-                        _currentSuggestions = [];
-                    }
-
-                    _focusLostCount = 0;
-                }
+                _focusLostCount = 0; // Overlay stays - only dismissed by mouse move or Esc
             }
             else
             {
                 _focusLostCount = 0;
                 if (_writerAwake
-                    && _settingsService.Settings.Writer.FollowCaret
                     && _inputService.IsOverlayVisible
                     && Win32Caret.GetCaretPosition(out var cx, out var cy)
                     && (cx != _lastOverlayCaretX || cy != _lastOverlayCaretY))
@@ -704,10 +717,8 @@ public class ApplicationService : IDisposable
             _currentSuggestions = suggestions;
         }
 
-        if (!_inputService.IsOverlayVisible)
-        {
-            CaptureMouseDismissAnchor();
-        }
+        // Always recapture mouse anchor when showing — ensures grace period resets
+        CaptureMouseDismissAnchor();
 
         _overlayService.ShowSuggestions(suggestions);
         _inputService.IsOverlayVisible = true;
@@ -1060,8 +1071,11 @@ public class ApplicationService : IDisposable
                     break;
                 }
 
-                var t = SanitizeOverlaySuggestionText(r.Text);
-                if (t.Length == 0 || t.Length > 120 || seen.Contains(t))
+                var isSentence = aiAdded == 0;
+                var t = isSentence
+                    ? SanitizeAiSentenceText(r.Text)
+                    : SanitizeOverlaySuggestionText(r.Text);
+                if (t.Length == 0 || t.Length > 200 || seen.Contains(t))
                 {
                     continue;
                 }
@@ -1071,8 +1085,8 @@ public class ApplicationService : IDisposable
                 {
                     DisplayText = t,
                     InsertText = string.Empty,
-                    Kind = SuggestionKind.AiSuggestion,
-                    Score = 5200 - aiAdded * 14
+                    Kind = isSentence ? SuggestionKind.AiSentence : SuggestionKind.AiSuggestion,
+                    Score = isSentence ? 6000 : 5200 - aiAdded * 14
                 });
                 aiAdded++;
             }
@@ -1348,6 +1362,10 @@ public class ApplicationService : IDisposable
 
                 _overlayService.ClearSuppression();
 
+                // Reset mouse-dismiss tracking BEFORE setting awake so grace period starts fresh
+                _overlayShownTick = Environment.TickCount64;
+                CaptureMouseDismissAnchor();
+
                 var wasAsleep = !_writerAwake;
                 _writerAwake = true;
                 if (wasAsleep)
@@ -1356,6 +1374,9 @@ public class ApplicationService : IDisposable
                     NotifyWriterWakeTray();
                 }
 
+                // Always show overlay on wake key, even if already awake
+                _inputService.IsOverlayVisible = true;
+                _overlayService.ShowWindow();
                 if (IsWriterCaretAvailable())
                 {
                     ShowOverlay();
@@ -1474,7 +1495,8 @@ public class ApplicationService : IDisposable
 
         _hotkeyService.RegisterAction("OpenSettings", () =>
         {
-            _trayIconService.ShowSettings();
+            // Settings UI not available in Writer-only mode
+            _loggingService.Information("OpenSettings hotkey - no settings UI in Writer-only mode");
         });
 
         _hotkeyService.RegisterAction("OpenStillSpace", () =>
@@ -1485,13 +1507,8 @@ public class ApplicationService : IDisposable
 
     private void ShowModeMenu()
     {
-        DeferWriterUi(() =>
-        {
-            var w = new ModeMenuWindow(
-                () => _trayIconService.ShowSettings(null),
-                () => _trayIconService.ShowSettings(HotkeySettingsWindow.TabWordsPhrases));
-            w.ShowDialog();
-        });
+        // Mode menu not available in Writer-only mode (no tray icon)
+        _loggingService.Information("ModeMenu hotkey - not available in Writer-only mode");
     }
 
     private void RegisterDefaultHotkeys()
@@ -1506,7 +1523,7 @@ public class ApplicationService : IDisposable
             _hotkeyService.RegisterHotkey("WriterRefresh", "Ctrl+Shift+R");
             _hotkeyService.RegisterHotkey("ToggleOverlay", "Ctrl+Shift+O");
             _hotkeyService.RegisterHotkey("PauseWriter", "Ctrl+Shift+P");
-            _hotkeyService.RegisterHotkey("WakeWriter", "`", true);
+            _hotkeyService.RegisterHotkey("WakeWriter", "F9", false);
             _hotkeyService.RegisterHotkey("KillWriter", "Ctrl+Q");
             _hotkeyService.RegisterHotkey("CleanupWordBank", "Ctrl+Shift+X");
             _hotkeyService.RegisterHotkey("ResetAllWordBank", "Ctrl+Shift+Delete");
@@ -1526,11 +1543,20 @@ public class ApplicationService : IDisposable
         {
             foreach (var binding in settings.Where(b => b.Enabled))
             {
+                var isWake = string.Equals(binding.ActionName, "WakeWriter", StringComparison.OrdinalIgnoreCase);
+
+                // Bare backtick is reserved exclusively for WakeWriter. Skip any other action
+                // (e.g. a stale WriterRefresh=` binding) that would otherwise shadow the wake key.
+                if (!isWake && IsBareBacktickGesture(binding.Gesture))
+                {
+                    _loggingService.Information($"Skipping {binding.ActionName}=` — bare backtick is reserved for WakeWriter");
+                    continue;
+                }
+
                 var consume =
                     string.Equals(binding.ActionName, "OpenModeMenu", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(binding.ActionName, "OpenStillSpace", StringComparison.OrdinalIgnoreCase)
-                    || (string.Equals(binding.ActionName, "WakeWriter", StringComparison.OrdinalIgnoreCase)
-                        && IsBareBacktickGesture(binding.Gesture));
+                    || string.Equals(binding.ActionName, "OpenStillSpace", StringComparison.OrdinalIgnoreCase);
+                    // WakeWriter does NOT consume the key — pass-through ensures every press fires
                 _hotkeyService.RegisterHotkey(binding.ActionName, binding.Gesture, consume);
             }
 
@@ -1557,8 +1583,8 @@ public class ApplicationService : IDisposable
                 string.Equals(b.ActionName, "WakeWriter", StringComparison.OrdinalIgnoreCase));
             if (wakeDef == null || string.IsNullOrWhiteSpace(wakeDef.Gesture) || !wakeDef.Enabled)
             {
-                _hotkeyService.RegisterHotkey("WakeWriter", "`", true);
-                _loggingService.Information("WakeWriter bound to default ` (no user binding found)");
+                _hotkeyService.RegisterHotkey("WakeWriter", "F9", false);
+                _loggingService.Information("WakeWriter bound to default F9 (no user binding found)");
             }
         }
     }
@@ -1636,12 +1662,8 @@ public class ApplicationService : IDisposable
         _wordBeforePrevious = _previousWord;
         _previousWord = word.Trim().ToLowerInvariant();
 
-        if (_settingsService.Settings.Speech.EnableSpeechOnSelection &&
-            (_speakMode == SpeakMode.WordsOnly || _speakMode == SpeakMode.Both))
-        {
-            _speechService.SpeakQueued(word, true);
-            _overlayService.ShowSpeakerIndicator(word);
-        }
+        // Always speak completed word out loud
+        _speechService.SpeakQueued(word, true);
 
         AppendContext(word);
     }
@@ -1703,7 +1725,42 @@ public class ApplicationService : IDisposable
         }
 
         var s = text.Trim();
-        return HorizontalWhitespaceRun.Replace(s, " ");
+
+        // Strip leading list markers: "1.", "-", "•", "*", quotes
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"^[\d]+[.)\-:]\s*", "");
+        s = s.TrimStart('-', '•', '*', '·', '"', '\'', '`').Trim();
+
+        // Collapse internal whitespace
+        s = HorizontalWhitespaceRun.Replace(s, " ").Trim();
+
+        // Strip trailing punctuation that doesn't belong (commas, semicolons)
+        s = s.TrimEnd(',', ';');
+
+        // Cap phrases at 6 words
+        var words = s.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length > 6)
+        {
+            s = string.Join(" ", words.Take(6));
+        }
+
+        // Sentence-case: capitalise first letter
+        if (s.Length > 0)
+        {
+            s = char.ToUpperInvariant(s[0]) + s[1..];
+        }
+
+        return s;
+    }
+
+    private static string SanitizeAiSentenceText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+        var s = text.Trim();
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"^[\d]+[.)\-:]\s*", "");
+        s = s.TrimStart('-', '•', '*', '·', '"', '\'', '`').Trim();
+        s = HorizontalWhitespaceRun.Replace(s, " ").Trim();
+        if (s.Length > 0) s = char.ToUpperInvariant(s[0]) + s[1..];
+        return s;
     }
 
     private void OnPasteIntercept(object? sender, PasteInterceptEventArgs e)
@@ -2311,21 +2368,19 @@ public class ApplicationService : IDisposable
     {
         var binding = _settingsService.Settings.Hotkeys.Bindings
             .FirstOrDefault(b => string.Equals(b.ActionName, "WakeWriter", StringComparison.OrdinalIgnoreCase));
-        return string.IsNullOrWhiteSpace(binding?.Gesture) ? "`" : binding!.Gesture;
+        return string.IsNullOrWhiteSpace(binding?.Gesture) ? "F9" : binding!.Gesture;
     }
 
     private void NotifyWriterWakeTray()
     {
-        _trayIconService.ShowNotification(
-            "Writer awake",
-            $"Type in any text field for suggestions. Press Esc or move the mouse away to hide. Sleep again with the overlay ✕.");
+        // Tray notification removed - Writer is main window
+        _loggingService.Information("Writer awake - ready for typing");
     }
 
     private void NotifyWriterSleepTray()
     {
-        _trayIconService.ShowNotification(
-            "Writer sleeping",
-            $"Press {GetWakeWriterHotkeyDisplay()} to wake Writer and show suggestions again.");
+        // Tray notification removed - Writer is main window
+        _loggingService.Information("Writer sleeping - press wake key to show window again");
     }
 
     public void Dispose()
@@ -2350,7 +2405,7 @@ public class ApplicationService : IDisposable
         _inputService.Dispose();
         _overlayService.Dispose();
         _hotkeyService.Dispose();
-        _trayIconService.Dispose();
+        // _trayIconService.Dispose();
         _typingModel.Save();
         if (_typingModel is IDisposable typingDisposable)
         {

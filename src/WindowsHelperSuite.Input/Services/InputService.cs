@@ -675,9 +675,8 @@ public class InputService : IInputService, IDisposable
             _inactivityTimer.Stop();
             OverlayDismissRequested?.Invoke(this, new OverlayDismissEventArgs
             {
-                Reason = OverlayDismissReason.SessionEnded
+                Reason = OverlayDismissReason.Soft
             });
-            TypingStopped?.Invoke(this, EventArgs.Empty);
         }
     }
 
