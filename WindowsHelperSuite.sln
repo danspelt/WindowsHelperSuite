@@ -37,6 +37,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VoiceBridge.Contracts", "sr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindowsHelperSuite.VoiceBridge", "src\WindowsHelperSuite.VoiceBridge\WindowsHelperSuite.VoiceBridge.csproj", "{8D0EC7D8-3A22-4A9A-A655-3CB1643E5A15}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Buddy.SwitchBotScanner", "src\Buddy.SwitchBotScanner\Buddy.SwitchBotScanner.csproj", "{7F4A3B2C-1D5E-4F6A-9B8C-123456789ABC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -110,6 +112,10 @@ Global
 		{8D0EC7D8-3A22-4A9A-A655-3CB1643E5A15}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8D0EC7D8-3A22-4A9A-A655-3CB1643E5A15}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8D0EC7D8-3A22-4A9A-A655-3CB1643E5A15}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7F4A3B2C-1D5E-4F6A-9B8C-123456789ABC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7F4A3B2C-1D5E-4F6A-9B8C-123456789ABC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7F4A3B2C-1D5E-4F6A-9B8C-123456789ABC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7F4A3B2C-1D5E-4F6A-9B8C-123456789ABC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{C16EB8B8-9345-40AC-98F2-7146E09BE39E} = {303773F6-0596-404C-ADC7-B563A784EE44}
@@ -128,5 +134,6 @@ Global
 		{C9E316A1-28C4-41EF-986D-1473508577AD} = {303773F6-0596-404C-ADC7-B563A784EE44}
 		{C51A9D16-A6E2-4A8F-AEE6-23412AD89A2D} = {303773F6-0596-404C-ADC7-B563A784EE44}
 		{8D0EC7D8-3A22-4A9A-A655-3CB1643E5A15} = {303773F6-0596-404C-ADC7-B563A784EE44}
+		{7F4A3B2C-1D5E-4F6A-9B8C-123456789ABC} = {303773F6-0596-404C-ADC7-B563A784EE44}
 	EndGlobalSection
 EndGlobal

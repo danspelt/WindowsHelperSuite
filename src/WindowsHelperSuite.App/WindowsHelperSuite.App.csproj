@@ -12,6 +12,7 @@
     <ProjectReference Include="..\WindowsHelperSuite.Hotkeys\WindowsHelperSuite.Hotkeys.csproj" />
     <ProjectReference Include="..\WindowsHelperSuite.Settings\WindowsHelperSuite.Settings.csproj" />
     <ProjectReference Include="..\WindowsHelperSuite.VoiceBridge\WindowsHelperSuite.VoiceBridge.csproj" />
+    <ProjectReference Include="..\Buddy.SwitchBotScanner\Buddy.SwitchBotScanner.csproj" />
   </ItemGroup>
 
   <ItemGroup>
